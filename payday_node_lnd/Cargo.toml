@@ -1,0 +1,10 @@
+[package]
+name = "payday_node_lnd"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+payday_core = { path = "../payday_core" }
+fedimint-tonic-lnd = "0.2.0"
+async-trait = { workspace = true }
+bitcoin = { workspace = true }
