@@ -1,4 +1,5 @@
 use bitcoin::Network;
+use tokio_stream::StreamExt;
 
 use payday_core::error::PaydayResult;
 use payday_core::node::node_api::NodeApi;
@@ -17,6 +18,12 @@ async fn main() -> PaydayResult<()> {
 
     let balance = lnd.get_balance().await?;
     println!("{:?}", balance);
+
+    let subscription = lnd.subscribe_onchain_transactions(1190000).await?;
+    tokio::pin!(subscription);
+    while let Some(event) = subscription.next().await {
+        println!("{:?}", event);
+    }
 
     // let fee_estimates = client
     //     .lightning()

@@ -6,3 +6,6 @@ edition = "2021"
 [dependencies]
 async-trait = { workspace = true }
 bitcoin = { workspace = true }
+serde = { workspace = true }
+stream-ext = "0.2.4"
+tokio-stream = "0.1.14"
