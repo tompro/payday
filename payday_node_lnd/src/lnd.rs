@@ -2,6 +2,7 @@ use std::str::FromStr;
 
 use async_trait::async_trait;
 use bitcoin::{Address, Amount, Network};
+use fedimint_tonic_lnd::Client;
 use fedimint_tonic_lnd::lnrpc::{ChannelBalanceRequest, GetInfoRequest, WalletBalanceRequest};
 
 use payday_core::error::{PaydayError, PaydayResult};
@@ -9,7 +10,7 @@ use payday_core::node::node_api::{Balance, ChannelBalance, NodeApi, OnChainBalan
 
 pub struct LndRpc {
     network: Network,
-    lnd: fedimint_tonic_lnd::Client,
+    lnd: Client,
 }
 
 impl LndRpc {
@@ -19,7 +20,7 @@ impl LndRpc {
         macaroon_file: String,
         allowed_network: Network,
     ) -> PaydayResult<Self> {
-        let mut lnd = fedimint_tonic_lnd::connect(address, cert_file, macaroon_file)
+        let mut lnd: Client = fedimint_tonic_lnd::connect(address, cert_file, macaroon_file)
             .await
             .map_err(|e| PaydayError::NodeConnectError(e.to_string()))?;
 
