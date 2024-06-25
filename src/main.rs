@@ -1,11 +1,11 @@
-use bitcoin::Network;
-use tokio_stream::StreamExt;
+use bitcoin::{Amount, Network};
+use futures::stream::StreamExt;
 
-use payday_core::error::PaydayResult;
 use payday_core::node::node_api::NodeApi;
+use payday_core::PaydayResult;
 use payday_node_lnd::lnd::LndRpc;
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() -> PaydayResult<()> {
     let address = "https://localhost:10009".to_string();
     let cert_file = "/home/protom/dev/btc/payday_rs/tls.cert".to_string();
@@ -19,11 +19,38 @@ async fn main() -> PaydayResult<()> {
     let balance = lnd.get_balance().await?;
     println!("{:?}", balance);
 
+    let send_coins = lnd
+        .send_coins(
+            Amount::from_sat(250000),
+            "tb1pwrwjsyhgurspa7k7eqlvkphxllqh4yvz2w37hzcv0rpfnq749j2svganhr".to_string(),
+            Amount::from_sat(1),
+        )
+        .await?;
+    println!("{:?}", send_coins);
+
+    // let missed = lnd.subscribe_missed_transactions(1190000).await?;
+    // tokio::pin!(missed);
+    // // while let Some(event) = missed.next().await {
+    // //     println!("Subscription: {:?}", event);
+    // // }
+    // // let mut all = missed;
+    // while let Some(event) = missed.next().await {
+    //     println!("All: {:?}", event);
+    // }
     let subscription = lnd.subscribe_onchain_transactions(1190000).await?;
     tokio::pin!(subscription);
     while let Some(event) = subscription.next().await {
-        println!("{:?}", event);
+        println!("Subscription: {:?}", event);
     }
+
+    // while let Some(event) = subscription.next().await {
+    //     println!("Subscription: {:?}", event);
+    // }
+
+    // tokio::pin!(all);
+    // while let Some(event) = all.next().await {
+    //     println!("All: {:?}", event);
+    // }
 
     // let fee_estimates = client
     //     .lightning()

@@ -725,6 +725,7 @@ dependencies = [
  "bitcoin",
  "fedimint-tonic-lnd",
  "payday_core",
+ "tokio-stream",
 ]
 
 [[package]]
@@ -732,6 +733,7 @@ name = "payday_rs"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
+ "futures",
  "payday_core",
  "payday_node_lnd",
  "serde",

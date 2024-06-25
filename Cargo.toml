@@ -10,7 +10,8 @@ payday_node_lnd = { path = "./payday_node_lnd" }
 bitcoin = { workspace = true }
 serde = { workspace = true }
 stream-ext = "0.2.4"
-tokio-stream = "0.1.14"
+tokio-stream = { workspace = true }
+futures = "0.3.30"
 
 [workspace]
 members = [
@@ -22,3 +23,4 @@ members = [
 async-trait = "0.1.80"
 bitcoin = "0.32.2"
 serde = "1.0.203"
+tokio-stream = "0.1.14"
