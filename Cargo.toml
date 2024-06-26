@@ -22,5 +22,7 @@ members = [
 [workspace.dependencies]
 async-trait = "0.1.80"
 bitcoin = "0.32.2"
-serde = "1.0.203"
+serde = { version = "1.0.203", features = ["derive"] }
 tokio-stream = "0.1.14"
+currencies = "0.4.1"
+cqrs-es = "0.4.11"

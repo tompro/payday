@@ -1,4 +1,4 @@
-use bitcoin::{Amount, Network};
+use bitcoin::Network;
 use futures::stream::StreamExt;
 
 use payday_core::node::node_api::NodeApi;
@@ -16,41 +16,29 @@ async fn main() -> PaydayResult<()> {
     let address = lnd.new_address().await?;
     println!("{:?}", address);
 
-    let balance = lnd.get_balance().await?;
-    println!("{:?}", balance);
+    // let balance = lnd.get_balance().await?;
+    // println!("{:?}", balance);
 
-    let send_coins = lnd
-        .send_coins(
-            Amount::from_sat(250000),
-            "tb1pwrwjsyhgurspa7k7eqlvkphxllqh4yvz2w37hzcv0rpfnq749j2svganhr".to_string(),
-            Amount::from_sat(1),
-        )
-        .await?;
-    println!("{:?}", send_coins);
+    // let send_coins = lnd
+    //     .send_coins(
+    //         Amount::from_sat(250000),
+    //         "tb1pwrwjsyhgurspa7k7eqlvkphxllqh4yvz2w37hzcv0rpfnq749j2svganhr".to_string(),
+    //         Amount::from_sat(1),
+    //     )
+    //     .await?;
+    // println!("{:?}", send_coins);
 
-    // let missed = lnd.subscribe_missed_transactions(1190000).await?;
-    // tokio::pin!(missed);
-    // // while let Some(event) = missed.next().await {
-    // //     println!("Subscription: {:?}", event);
-    // // }
-    // // let mut all = missed;
-    // while let Some(event) = missed.next().await {
-    //     println!("All: {:?}", event);
-    // }
+    let pending = lnd.get_onchain_transactions(1190000, -1).await?;
+    for event in pending {
+        println!("Pending: {:?}", event);
+    }
+
     let subscription = lnd.subscribe_onchain_transactions(1190000).await?;
+    println!("Subscribing to onchain transactions");
     tokio::pin!(subscription);
     while let Some(event) = subscription.next().await {
         println!("Subscription: {:?}", event);
     }
-
-    // while let Some(event) = subscription.next().await {
-    //     println!("Subscription: {:?}", event);
-    // }
-
-    // tokio::pin!(all);
-    // while let Some(event) = all.next().await {
-    //     println!("All: {:?}", event);
-    // }
 
     // let fee_estimates = client
     //     .lightning()
@@ -65,28 +53,6 @@ async fn main() -> PaydayResult<()> {
     //     .await
     //     .unwrap();
     // println!("{:?}", fee_estimates);
-
-    // let send_coins = client.lightning().send_coins(
-    //     fedimint_tonic_lnd::lnrpc::SendCoinsRequest {
-    //         addr: "tb1pu6cmt6tvdnw44nrm5ddfcl8glrjllrsytmwm66fu0zlfglcdsths6rhpld".to_string(),
-    //         amount: 250000,
-    //         sat_per_vbyte: 1,
-    //         ..Default::default()
-    //     }
-    // ).await.unwrap();
-    // println!("{:?}", send_coins);
-
-    // let mut subscription: Response<Streaming<Transaction>> = client
-    //     .lightning()
-    //     .subscribe_transactions(fedimint_tonic_lnd::lnrpc::GetTransactionsRequest {
-    //         start_height: 1190000,
-    //         ..Default::default()
-    //     })
-    //     .await
-    //     .unwrap();
-    // while let Some(tx) = subscription.get_mut().next().await {
-    //     println!("{:?}", tx);
-    // }
 
     Ok(())
 }

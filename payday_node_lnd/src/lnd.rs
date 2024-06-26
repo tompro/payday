@@ -3,7 +3,9 @@ use std::str::FromStr;
 use async_trait::async_trait;
 use bitcoin::{Address, Amount, Network};
 use fedimint_tonic_lnd::Client;
-use fedimint_tonic_lnd::lnrpc::{ChannelBalanceRequest, GetInfoRequest, WalletBalanceRequest};
+use fedimint_tonic_lnd::lnrpc::{
+    ChannelBalanceRequest, GetInfoRequest, Transaction, WalletBalanceRequest,
+};
 use tokio_stream::StreamExt;
 
 use payday_core::{PaydayResult, PaydayStream};
@@ -46,6 +48,47 @@ impl LndRpc {
             return Err(PaydayError::InvalidBitcoinNetwork(network_info).into());
         }
         Ok(Self { network, lnd })
+    }
+}
+
+impl LndRpc {
+    async fn subscribe_transactions(
+        &mut self,
+        start_height: i32,
+    ) -> PaydayResult<PaydayStream<Transaction>> {
+        let stream = self
+            .lnd
+            .lightning()
+            .subscribe_transactions(fedimint_tonic_lnd::lnrpc::GetTransactionsRequest {
+                start_height,
+                end_height: -1,
+                ..Default::default()
+            })
+            .await
+            .map_err(|e| PaydayError::NodeApiError(e.to_string()))?
+            .into_inner()
+            .filter(|tx| tx.is_ok())
+            .map(|tx| tx.unwrap());
+        Ok(Box::pin(stream))
+    }
+
+    async fn get_transactions(
+        &mut self,
+        start_height: i32,
+        end_height: i32,
+    ) -> PaydayResult<Vec<Transaction>> {
+        Ok(self
+            .lnd
+            .lightning()
+            .get_transactions(fedimint_tonic_lnd::lnrpc::GetTransactionsRequest {
+                start_height,
+                end_height,
+                ..Default::default()
+            })
+            .await
+            .map_err(|e| PaydayError::NodeApiError(e.to_string()))?
+            .into_inner()
+            .transactions)
     }
 }
 
@@ -101,17 +144,8 @@ impl NodeApi for LndRpc {
         end_height: i32,
     ) -> PaydayResult<Vec<OnChainTransactionEvent>> {
         Ok(self
-            .lnd
-            .lightning()
-            .get_transactions(fedimint_tonic_lnd::lnrpc::GetTransactionsRequest {
-                start_height,
-                end_height,
-                ..Default::default()
-            })
-            .await
-            .map_err(|e| PaydayError::NodeApiError(e.to_string()))?
-            .into_inner()
-            .transactions
+            .get_transactions(start_height, end_height)
+            .await?
             .iter()
             .map(|tx| OnChainTransactionEvent::Any(format!("{:?}", tx)))
             .collect())
@@ -143,30 +177,15 @@ impl NodeApi for LndRpc {
             fee: sats_per_vbyte,
         })
     }
-
     async fn subscribe_onchain_transactions(
         &mut self,
         start_height: i32,
     ) -> PaydayResult<PaydayStream<OnChainTransactionEvent>> {
-        let pending = self.get_onchain_transactions(start_height, -1).await?;
-        let pending_stream = tokio_stream::iter(pending);
-
-        let subscription = self
-            .lnd
-            .lightning()
-            .subscribe_transactions(fedimint_tonic_lnd::lnrpc::GetTransactionsRequest {
-                start_height,
-                end_height: -1,
-                ..Default::default()
-            })
-            .await
-            .map_err(|e| PaydayError::NodeApiError(e.to_string()))?
-            .into_inner();
-
-        let result = subscription
-            .filter(|tx| tx.is_ok())
-            .map(|tx| OnChainTransactionEvent::Any(format!("{:?}", tx.unwrap())));
-        Ok(Box::pin(result))
+        let stream = self
+            .subscribe_transactions(start_height)
+            .await?
+            .map(|tx| OnChainTransactionEvent::Any(format!("{:?}", tx)));
+        Ok(Box::pin(stream))
     }
 }
 
