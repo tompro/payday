@@ -984,6 +984,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "bitcoin",
+ "cqrs-es",
  "fedimint-tonic-lnd",
  "payday_core",
  "tokio",

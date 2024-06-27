@@ -7,13 +7,13 @@ use crate::PaydayStream;
 #[async_trait]
 pub trait NodeApi {
     /// Get the current balances (onchain and lightning) of the wallet.
-    async fn get_balance(&mut self) -> PaydayResult<Balance>;
+    async fn get_balance(&self) -> PaydayResult<Balance>;
 
     /// Get a new onchain address for the wallet.
-    async fn new_address(&mut self) -> PaydayResult<Address>;
+    async fn new_address(&self) -> PaydayResult<Address>;
 
     async fn get_onchain_transactions(
-        &mut self,
+        &self,
         start_height: i32,
         end_height: i32,
     ) -> PaydayResult<Vec<OnChainTransactionEvent>>;
@@ -21,14 +21,14 @@ pub trait NodeApi {
     // async fn estimate_fee(&self, target_conf: u8, addr_to_amount: HashMap<String, u64>) -> u64;
 
     async fn send_coins(
-        &mut self,
+        &self,
         amount: Amount,
         address: String,
         sats_per_vbyte: Amount,
     ) -> PaydayResult<OnChainTransactionResult>;
 
     async fn subscribe_onchain_transactions(
-        &mut self,
+        &self,
         start_height: i32,
     ) -> PaydayResult<PaydayStream<OnChainTransactionEvent>>;
 }
