@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use bitcoin::{Address, Amount, Network};
 
 use payday_core::node::node_api::{
-    Balance, ChannelBalance, NodeApi, OnChainBalance, OnChainTransactionEvent,
+    Balance, ChannelBalance, OnChainApi, OnChainBalance, OnChainTransactionEvent,
     OnChainTransactionResult,
 };
 use payday_core::node::to_address;
@@ -24,7 +24,7 @@ impl Lnd {
 }
 
 #[async_trait]
-impl NodeApi for Lnd {
+impl OnChainApi for Lnd {
     async fn get_balance(&self) -> PaydayResult<Balance> {
         let (on_chain, lightning) = self.client.get_balances().await?;
         Ok(Balance {

@@ -1,6 +1,6 @@
 use bitcoin::Network;
 
-use payday_core::node::node_api::NodeApi;
+use payday_core::node::node_api::OnChainApi;
 use payday_core::PaydayResult;
 use payday_node_lnd::lnd::{Lnd, LndConfig};
 
