@@ -2,15 +2,18 @@ use bitcoin::Network;
 
 use payday_core::node::node_api::NodeApi;
 use payday_core::PaydayResult;
-use payday_node_lnd::lnd::LndRpc;
+use payday_node_lnd::lnd::{Lnd, LndConfig};
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() -> PaydayResult<()> {
-    let address = "https://localhost:10009".to_string();
-    let cert_file = "/home/protom/dev/btc/payday_rs/tls.cert".to_string();
-    let macaroon_file = "/home/protom/dev/btc/payday_rs/admin.macaroon".to_string();
-
-    let lnd = LndRpc::new(address, cert_file, macaroon_file, Network::Signet).await?;
+    let lnd_config = LndConfig {
+        name: "payday".to_string(),
+        address: "https://localhost:10009".to_string(),
+        cert_path: "/home/protom/dev/btc/payday_rs/tls.cert".to_string(),
+        macaroon_file: "/home/protom/dev/btc/payday_rs/admin.macaroon".to_string(),
+        network: Network::Signet,
+    };
+    let lnd = Lnd::new(lnd_config).await?;
 
     let address = lnd.new_address().await?;
     println!("{:?}", address);
@@ -27,10 +30,10 @@ async fn main() -> PaydayResult<()> {
     //     .await?;
     // println!("{:?}", send_coins);
 
-    // let pending = lnd.get_onchain_transactions(1190000, -1).await?;
-    // for event in pending {
-    //     println!("Pending: {:?}", event);
-    // }
+    let pending = lnd.get_onchain_transactions(1190000, -1).await?;
+    for event in pending {
+        println!("Pending: {:?}", event);
+    }
 
     // let subscription = lnd.subscribe_onchain_transactions(1190000).await?;
     // println!("Subscribing to onchain transactions");

@@ -12,14 +12,20 @@ pub trait NodeApi {
     /// Get a new onchain address for the wallet.
     async fn new_address(&self) -> PaydayResult<Address>;
 
+    /// Get history of onchain transactions between start_height and end_height.
     async fn get_onchain_transactions(
         &self,
         start_height: i32,
         end_height: i32,
     ) -> PaydayResult<Vec<OnChainTransactionEvent>>;
 
+    /// Given an onchain address string, parses and validates that it is a valid
+    /// address for this nodes network.
+    fn validate_address(&self, address: &str) -> PaydayResult<Address>;
+
     // async fn estimate_fee(&self, target_conf: u8, addr_to_amount: HashMap<String, u64>) -> u64;
 
+    /// Send coins to an address.
     async fn send_coins(
         &self,
         amount: Amount,
@@ -27,9 +33,9 @@ pub trait NodeApi {
         sats_per_vbyte: Amount,
     ) -> PaydayResult<OnChainTransactionResult>;
 
+    /// Subscribe to a stream onchain transactions.
     async fn subscribe_onchain_transactions(
         &self,
-        start_height: i32,
     ) -> PaydayResult<PaydayStream<OnChainTransactionEvent>>;
 }
 
