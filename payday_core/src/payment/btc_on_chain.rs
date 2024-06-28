@@ -3,10 +3,10 @@ use bitcoin::Address;
 use cqrs_es::{Aggregate, DomainEvent};
 use serde::{Deserialize, Serialize};
 
-use crate::PaydayResult;
 use crate::payment::amount::Amount;
 use crate::payment::currency::Currency;
 use crate::payment::invoice::{InvoiceError, InvoiceId};
+use crate::PaydayResult;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BtcOnChainInvoice {
@@ -25,8 +25,8 @@ impl Default for BtcOnChainInvoice {
         Self {
             invoice_id: "".to_string(),
             address: "".to_string(),
-            amount: Amount::zero(Currency::BTC),
-            received_amount: Amount::zero(Currency::BTC),
+            amount: Amount::zero(Currency::Btc),
+            received_amount: Amount::zero(Currency::Btc),
             confirmations: 0,
             underpayment: false,
             overpayment: false,
@@ -112,10 +112,10 @@ impl Aggregate for BtcOnChainInvoice {
     ) -> Result<Vec<Self::Event>, Self::Error> {
         match command {
             OnChainInvoiceCommand::CreateInvoice { invoice_id, amount } => {
-                if amount.currency != Currency::BTC {
+                if amount.currency != Currency::Btc {
                     return Err(InvoiceError::InvalidCurrency(
                         amount.currency.to_string(),
-                        Currency::BTC.to_string(),
+                        Currency::Btc.to_string(),
                     ));
                 }
 
@@ -242,7 +242,7 @@ mod aggregate_tests {
     #[test]
     fn test_set_confirmed() {
         let expected = OnChainInvoiceEvent::PaymentConfirmed {
-            received_amount: Amount::new(Currency::BTC, 100_000),
+            received_amount: Amount::new(Currency::Btc, 100_000),
             underpayment: false,
             overpayment: false,
             confirmations: 1,
@@ -251,13 +251,13 @@ mod aggregate_tests {
             .given(vec![mock_created_event(100_000)])
             .when(OnChainInvoiceCommand::SetConfirmed {
                 confirmations: 1,
-                amount: Amount::new(Currency::BTC, 100_000),
+                amount: Amount::new(Currency::Btc, 100_000),
             })
             .then_expect_events(vec![expected])
     }
 
     fn amount_fn(amount: u64) -> Amount {
-        Amount::new(Currency::BTC, amount)
+        Amount::new(Currency::Btc, amount)
     }
 
     fn mock_confirmed_event(amount: u64, confirmations: u64) -> OnChainInvoiceEvent {
@@ -284,7 +284,7 @@ mod aggregate_tests {
     fn mock_created_event(amount: u64) -> OnChainInvoiceEvent {
         OnChainInvoiceEvent::InvoiceCreated {
             invoice_id: "123".to_string(),
-            amount: amount_fn(100_000),
+            amount: amount_fn(amount),
             address: "tb1q6xm2qgh5r83lvmmu0v7c3d4wrd9k2uxu3sgcr4".to_string(),
         }
     }

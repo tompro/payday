@@ -124,14 +124,14 @@ mod aggregate_tests {
     fn test_invoice() {
         let expected = InvoiceEvent::InvoiceCreated {
             invoice_id: "123".to_string(),
-            amount: Amount::new(Currency::BTC, 100_000),
+            amount: Amount::new(Currency::Btc, 100_000),
         };
 
         InvoiceTestFramework::with(())
             .given_no_previous_events()
             .when(InvoiceCommand::CreateInvoice {
                 invoice_id: "123".to_string(),
-                amount: Amount::new(Currency::BTC, 100_000),
+                amount: Amount::new(Currency::Btc, 100_000),
             })
             .then_expect_events(vec![expected])
     }

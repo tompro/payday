@@ -26,7 +26,7 @@ impl Amount {
 impl Default for Amount {
     fn default() -> Self {
         Self {
-            currency: Currency::BTC,
+            currency: Currency::Btc,
             amount: 0,
         }
     }
