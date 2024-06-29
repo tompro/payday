@@ -1,12 +1,10 @@
 use async_trait::async_trait;
-use bitcoin::Address;
 use cqrs_es::{Aggregate, DomainEvent};
 use serde::{Deserialize, Serialize};
 
 use crate::payment::amount::Amount;
 use crate::payment::currency::Currency;
 use crate::payment::invoice::{InvoiceError, InvoiceId};
-use crate::PaydayResult;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BtcOnChainInvoice {
@@ -36,9 +34,7 @@ impl Default for BtcOnChainInvoice {
 }
 
 #[async_trait]
-pub trait OnChainInvoiceService: Send + Sync {
-    async fn new_address(&self) -> PaydayResult<Address>;
-}
+pub trait OnChainInvoiceService: Send + Sync {}
 
 pub struct OnChainInvoiceServices {
     pub address_service: Box<dyn OnChainInvoiceService>,
@@ -49,6 +45,7 @@ pub enum OnChainInvoiceCommand {
     CreateInvoice {
         invoice_id: InvoiceId,
         amount: Amount,
+        address: String,
     },
     SetPending {
         amount: Amount,
@@ -108,20 +105,20 @@ impl Aggregate for BtcOnChainInvoice {
     async fn handle(
         &self,
         command: Self::Command,
-        service: &Self::Services,
+        _service: &Self::Services,
     ) -> Result<Vec<Self::Event>, Self::Error> {
         match command {
-            OnChainInvoiceCommand::CreateInvoice { invoice_id, amount } => {
+            OnChainInvoiceCommand::CreateInvoice {
+                invoice_id,
+                amount,
+                address,
+            } => {
                 if amount.currency != Currency::Btc {
                     return Err(InvoiceError::InvalidCurrency(
                         amount.currency.to_string(),
                         Currency::Btc.to_string(),
                     ));
                 }
-
-                let address = service.address_service.new_address().await.map_err(|_| {
-                    InvoiceError::ServiceError("cold not create on chain address".to_string())
-                })?;
 
                 Ok(vec![OnChainInvoiceEvent::InvoiceCreated {
                     invoice_id,
@@ -186,9 +183,6 @@ impl Aggregate for BtcOnChainInvoice {
 
 #[cfg(test)]
 mod aggregate_tests {
-    use std::str::FromStr;
-
-    use bitcoin::Network;
     use cqrs_es::test::TestFramework;
 
     use crate::payment::currency::Currency;
@@ -205,6 +199,7 @@ mod aggregate_tests {
             .when(OnChainInvoiceCommand::CreateInvoice {
                 invoice_id: "123".to_string(),
                 amount: amount_fn(100_000),
+                address: "tb1q6xm2qgh5r83lvmmu0v7c3d4wrd9k2uxu3sgcr4".to_string(),
             })
             .then_expect_events(vec![expected])
     }
@@ -260,15 +255,6 @@ mod aggregate_tests {
         Amount::new(Currency::Btc, amount)
     }
 
-    fn mock_confirmed_event(amount: u64, confirmations: u64) -> OnChainInvoiceEvent {
-        OnChainInvoiceEvent::PaymentConfirmed {
-            received_amount: amount_fn(amount),
-            underpayment: false,
-            overpayment: false,
-            confirmations,
-        }
-    }
-
     fn mock_pending_event(
         amount: u64,
         underpayment: bool,
@@ -297,14 +283,5 @@ mod aggregate_tests {
 
     struct MockAddressService;
     #[async_trait]
-    impl OnChainInvoiceService for MockAddressService {
-        async fn new_address(&self) -> PaydayResult<Address> {
-            Ok(
-                Address::from_str("tb1q6xm2qgh5r83lvmmu0v7c3d4wrd9k2uxu3sgcr4")
-                    .unwrap()
-                    .require_network(Network::Signet)
-                    .unwrap(),
-            )
-        }
-    }
+    impl OnChainInvoiceService for MockAddressService {}
 }
