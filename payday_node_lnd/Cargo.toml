@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 payday_core = { path = "../payday_core" }
+payday_btc = { path = "../payday_btc" }
 fedimint-tonic-lnd = "0.2.0"
 async-trait = { workspace = true }
 bitcoin = { workspace = true }

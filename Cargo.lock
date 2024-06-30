@@ -966,6 +966,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "payday_btc"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bitcoin",
+ "cqrs-es",
+ "payday_core",
+ "serde",
+ "tokio-stream",
+]
+
+[[package]]
 name = "payday_core"
 version = "0.1.0"
 dependencies = [
@@ -974,7 +986,6 @@ dependencies = [
  "cqrs-es",
  "currencies",
  "serde",
- "stream-ext",
  "tokio-stream",
 ]
 
@@ -986,6 +997,7 @@ dependencies = [
  "bitcoin",
  "cqrs-es",
  "fedimint-tonic-lnd",
+ "payday_btc",
  "payday_core",
  "tokio",
  "tokio-stream",
@@ -997,6 +1009,7 @@ version = "0.1.0"
 dependencies = [
  "bitcoin",
  "futures",
+ "payday_btc",
  "payday_core",
  "payday_node_lnd",
  "serde",

@@ -9,5 +9,4 @@ bitcoin = { workspace = true }
 serde = { workspace = true }
 currencies = { workspace = true }
 cqrs-es = { workspace = true }
-stream-ext = "0.2.4"
-tokio-stream = "0.1.14"
+tokio-stream = { workspace = true }

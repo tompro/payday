@@ -1,6 +1,5 @@
-mod amount;
-mod btc_on_chain;
-mod currency;
-mod invoice;
+pub mod amount;
+pub mod currency;
+pub mod invoice;
 mod payout;
 mod processor;

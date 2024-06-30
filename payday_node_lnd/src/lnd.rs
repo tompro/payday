@@ -1,11 +1,13 @@
 use async_trait::async_trait;
 use bitcoin::{Address, Amount, Network};
 
-use payday_core::node::node_api::{
-    Balance, ChannelBalance, OnChainApi, OnChainBalance, OnChainTransactionEvent,
-    OnChainTransactionResult,
+use payday_btc::{
+    on_chain_api::{
+        Balance, ChannelBalance, OnChainApi, OnChainBalance, OnChainTransactionEvent,
+        OnChainTransactionResult,
+    },
+    to_address,
 };
-use payday_core::node::to_address;
 use payday_core::{PaydayResult, PaydayStream};
 use tokio_stream::StreamExt;
 

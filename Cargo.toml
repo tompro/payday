@@ -7,6 +7,7 @@ edition = "2021"
 tokio = { version = "1.25.0", features = ["full"] }
 payday_core = { path = "./payday_core" }
 payday_node_lnd = { path = "./payday_node_lnd" }
+payday_btc = { path = "./payday_btc" }
 bitcoin = { workspace = true }
 serde = { workspace = true }
 stream-ext = "0.2.4"
@@ -14,10 +15,7 @@ tokio-stream = { workspace = true }
 futures = "0.3.30"
 
 [workspace]
-members = [
-    "payday_core",
-    "payday_node_lnd"
-]
+members = ["payday_btc", "payday_core", "payday_node_lnd"]
 
 [workspace.dependencies]
 async-trait = "0.1.80"

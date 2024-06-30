@@ -14,7 +14,8 @@ use fedimint_tonic_lnd::{
     },
     Client,
 };
-use payday_core::{node::to_address, PaydayError, PaydayResult, PaydayStream};
+use payday_btc::to_address;
+use payday_core::{PaydayError, PaydayResult, PaydayStream};
 use tokio::sync::{Mutex, MutexGuard};
 use tokio_stream::StreamExt;
 
