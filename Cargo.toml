@@ -4,15 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-tokio = { version = "1.25.0", features = ["full"] }
 payday_core = { path = "./payday_core" }
 payday_node_lnd = { path = "./payday_node_lnd" }
 payday_btc = { path = "./payday_btc" }
+tokio = { workspace = true }
 bitcoin = { workspace = true }
 serde = { workspace = true }
-stream-ext = "0.2.4"
 tokio-stream = { workspace = true }
-futures = "0.3.30"
 
 [workspace]
 members = ["payday_btc", "payday_core", "payday_node_lnd"]
@@ -21,6 +19,8 @@ members = ["payday_btc", "payday_core", "payday_node_lnd"]
 async-trait = "0.1.80"
 bitcoin = "0.32.2"
 serde = { version = "1.0.203", features = ["derive"] }
-tokio-stream = "0.1.14"
+serde_json = "1.0.118"
+tokio-stream = "0.1.15"
 currencies = "0.4.1"
 cqrs-es = "0.4.11"
+tokio = { version = "1.38.0", features = ["full"] }

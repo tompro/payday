@@ -11,4 +11,4 @@ async-trait = { workspace = true }
 bitcoin = { workspace = true }
 tokio-stream = { workspace = true }
 cqrs-es = { workspace = true }
-tokio = "1.38.0"
+tokio = { workspace = true }

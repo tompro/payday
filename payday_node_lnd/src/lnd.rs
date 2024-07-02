@@ -1,15 +1,15 @@
+use std::collections::HashMap;
+
 use async_trait::async_trait;
 use bitcoin::{Address, Amount, Network};
 
+use fedimint_tonic_lnd::lnrpc::Transaction;
 use payday_btc::{
-    on_chain_api::{
-        Balance, ChannelBalance, OnChainApi, OnChainBalance, OnChainTransactionEvent,
-        OnChainTransactionResult,
-    },
+    on_chain_api::{Balance, ChannelBalance, OnChainApi, OnChainBalance, OnChainPaymentResult},
+    on_chain_processor::{OnChainTransaction, OnChainTransactionEvent},
     to_address,
 };
-use payday_core::{PaydayResult, PaydayStream};
-use tokio_stream::StreamExt;
+use payday_core::PaydayResult;
 
 use crate::wrapper::LndRpcWrapper;
 
@@ -55,41 +55,70 @@ impl OnChainApi for Lnd {
         start_height: i32,
         end_height: i32,
     ) -> PaydayResult<Vec<OnChainTransactionEvent>> {
-        Ok(self
+        let result = self
             .client
             .get_transactions(start_height, end_height)
             .await?
             .iter()
-            .map(|tx| OnChainTransactionEvent::Any(format!("{:?}", tx)))
-            .collect())
+            .flat_map(|tx| to_on_chain_events(tx, self.config.network))
+            .flatten()
+            .collect();
+        Ok(result)
     }
 
-    async fn send_coins(
+    async fn estimate_fee(
+        &self,
+        target_conf: i32,
+        outputs: HashMap<String, Amount>,
+    ) -> PaydayResult<Amount> {
+        let out = outputs
+            .iter()
+            .map(|p| (p.0.to_owned(), p.1.to_sat() as i64))
+            .collect();
+        let fee = self.client.estimate_fee(target_conf, out).await?;
+        Ok(fee)
+    }
+
+    async fn send(
         &self,
         amount: Amount,
         address: String,
         sats_per_vbyte: Amount,
-    ) -> PaydayResult<OnChainTransactionResult> {
+    ) -> PaydayResult<OnChainPaymentResult> {
         let tx_id = self
             .client
             .send_coins(amount, &address, sats_per_vbyte)
             .await?;
 
-        Ok(OnChainTransactionResult {
+        Ok(OnChainPaymentResult {
             tx_id,
-            amount,
+            amounts: HashMap::from([(address.to_owned(), amount.to_owned())]),
             fee: sats_per_vbyte,
         })
     }
-    async fn subscribe_onchain_transactions(
+
+    async fn batch_send(
         &self,
-    ) -> PaydayResult<PaydayStream<OnChainTransactionEvent>> {
-        let stream = self
-            .client
-            .subscribe_transactions()
-            .await?
-            .map(|tx| OnChainTransactionEvent::Any(format!("{:?}", tx)));
-        Ok(Box::pin(stream))
+        outputs: HashMap<String, Amount>,
+        sats_per_vbyte: Amount,
+    ) -> PaydayResult<OnChainPaymentResult> {
+        let out = outputs
+            .iter()
+            .flat_map(|(k, v)| {
+                to_address(k, self.config.network)
+                    .ok()
+                    .map(|a| (a, v.to_sat() as i64))
+            })
+            .collect();
+        let tx_id = self.client.batch_send(out, sats_per_vbyte).await?;
+        Ok(OnChainPaymentResult {
+            tx_id,
+            amounts: outputs
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_owned()))
+                .collect(),
+            fee: sats_per_vbyte,
+        })
     }
 }
 
@@ -102,10 +131,54 @@ pub struct LndConfig {
     pub network: Network,
 }
 
+/// Converts a satoshi amount to an Amount
 fn to_amount(sats: i64) -> Amount {
     if sats < 0 {
         Amount::ZERO
     } else {
         Amount::from_sat(sats.unsigned_abs())
     }
+}
+
+/// Converts a Transaction to a list of OnChainTransactionEvents.
+fn to_on_chain_events(
+    tx: &Transaction,
+    chain: Network,
+) -> PaydayResult<Vec<OnChainTransactionEvent>> {
+    let received = tx.amount > 0;
+    let confirmed = tx.num_confirmations > 0;
+
+    let res = tx
+        .output_details
+        .iter()
+        .filter(|d| {
+            if received {
+                d.is_our_address
+            } else {
+                !d.is_our_address
+            }
+        })
+        .flat_map(|d| {
+            let address = to_address(&d.address, chain);
+            if let Ok(address) = address {
+                let payload = OnChainTransaction {
+                    tx_id: tx.tx_hash.to_owned(),
+                    block_height: tx.block_height,
+                    confirmations: tx.num_confirmations,
+                    amount: to_amount(tx.amount),
+                    address,
+                };
+
+                match (confirmed, received) {
+                    (true, true) => Some(OnChainTransactionEvent::ReceivedConfirmed(payload)),
+                    (true, false) => Some(OnChainTransactionEvent::SentConfirmed(payload)),
+                    (false, true) => Some(OnChainTransactionEvent::ReceivedUnconfirmed(payload)),
+                    (false, false) => Some(OnChainTransactionEvent::SentUnconfirmed(payload)),
+                }
+            } else {
+                None
+            }
+        })
+        .collect();
+    Ok(res)
 }

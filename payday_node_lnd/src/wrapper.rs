@@ -4,13 +4,14 @@
 //! handles connection and network checks, maps errors to project
 //! specific errors, and provides a convenient interface for the
 //! operations needed for invoicing.
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use bitcoin::{Address, Amount, Network};
 use fedimint_tonic_lnd::{
     lnrpc::{
         ChannelBalanceRequest, ChannelBalanceResponse, GetInfoRequest, GetTransactionsRequest,
-        SendCoinsRequest, Transaction, WalletBalanceRequest, WalletBalanceResponse,
+        SendCoinsRequest, SendManyRequest, Transaction, WalletBalanceRequest,
+        WalletBalanceResponse,
     },
     Client,
 };
@@ -135,6 +136,56 @@ impl LndRpcWrapper {
             .txid;
 
         Ok(txid.to_string())
+    }
+
+    /// Send coins to multiple addresses.
+    pub async fn batch_send(
+        &self,
+        outputs: HashMap<Address, i64>,
+        sats_per_vbyte: Amount,
+    ) -> PaydayResult<String> {
+        let out = outputs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_owned()))
+            .collect();
+        let txid = self
+            .client()
+            .await
+            .lightning()
+            .send_many(SendManyRequest {
+                addr_to_amount: out,
+                sat_per_vbyte: sats_per_vbyte.to_sat(),
+                ..Default::default()
+            })
+            .await
+            .map_err(|e| PaydayError::NodeApiError(e.to_string()))?
+            .into_inner()
+            .txid;
+
+        Ok(txid.to_owned())
+    }
+
+    /// Estimate the fee for a transaction.
+    pub async fn estimate_fee(
+        &self,
+        target_conf: i32,
+        outputs: HashMap<String, i64>,
+    ) -> PaydayResult<Amount> {
+        let fee = self
+            .client()
+            .await
+            .lightning()
+            .estimate_fee(fedimint_tonic_lnd::lnrpc::EstimateFeeRequest {
+                target_conf,
+                addr_to_amount: outputs,
+                ..Default::default()
+            })
+            .await
+            .map_err(|e| PaydayError::NodeApiError(e.to_string()))?
+            .into_inner()
+            .sat_per_vbyte;
+
+        Ok(Amount::from_sat(fee))
     }
 
     /// Get a stream of onchain transactions relevant to the wallet. As LND RPC does not handle
