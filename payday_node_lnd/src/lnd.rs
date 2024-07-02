@@ -1,15 +1,24 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use bitcoin::{Address, Amount, Network};
 
-use fedimint_tonic_lnd::lnrpc::Transaction;
+use fedimint_tonic_lnd::{
+    lnrpc::{GetTransactionsRequest, Transaction},
+    Client,
+};
 use payday_btc::{
-    on_chain_api::{Balance, ChannelBalance, OnChainApi, OnChainBalance, OnChainPaymentResult},
-    on_chain_processor::{OnChainTransaction, OnChainTransactionEvent},
+    on_chain_api::{
+        Balance, ChannelBalance, OnChainApi, OnChainBalance, OnChainPaymentResult, OnChainStreamApi,
+    },
+    on_chain_processor::{
+        OnChainTransaction, OnChainTransactionEvent, OnChainTransactionEventProcessor,
+    },
     to_address,
 };
 use payday_core::PaydayResult;
+use tokio::{sync::Mutex, task::JoinHandle};
+use tokio_stream::StreamExt;
 
 use crate::wrapper::LndRpcWrapper;
 
@@ -181,4 +190,60 @@ fn to_on_chain_events(
         })
         .collect();
     Ok(res)
+}
+
+pub struct LndTransactionStream {
+    config: LndConfig,
+    handler: Arc<Mutex<dyn OnChainTransactionEventProcessor>>,
+}
+
+impl LndTransactionStream {
+    pub fn new(
+        config: LndConfig,
+        handler: Arc<Mutex<dyn OnChainTransactionEventProcessor>>,
+    ) -> Self {
+        Self { config, handler }
+    }
+}
+
+impl OnChainStreamApi for LndTransactionStream {
+    fn process_events(&self) -> PaydayResult<JoinHandle<()>> {
+        let service = self.handler.clone();
+        let config = self.config.clone();
+
+        let handle = tokio::spawn(async move {
+            let mut lnd: Client = fedimint_tonic_lnd::connect(
+                config.address.to_string(),
+                config.cert_path.to_string(),
+                config.macaroon_file.to_string(),
+            )
+            .await
+            .expect("Failed to connect to LND on-chain transaction stream");
+
+            let mut stream = lnd
+                .lightning()
+                .subscribe_transactions(GetTransactionsRequest::default())
+                .await
+                .expect("Failed to subscribe to LND on-chain transaction events")
+                .into_inner()
+                .filter(|tx| tx.is_ok())
+                .map(|tx| tx.unwrap());
+
+            while let Some(event) = stream.next().await {
+                let events = to_on_chain_events(&event, config.network)
+                    .expect("Failed to parse LND on-chain transaction");
+
+                for event in events {
+                    service
+                        .lock()
+                        .await
+                        .process_event(event)
+                        .await
+                        .expect("Failed to process LND on chain transaction event");
+                }
+            }
+        });
+
+        Ok(handle)
+    }
 }

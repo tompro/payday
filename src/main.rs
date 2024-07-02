@@ -1,10 +1,14 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use bitcoin::{Amount, Network};
 
-use payday_btc::on_chain_api::OnChainApi;
+use payday_btc::{
+    on_chain_api::{OnChainApi, OnChainStreamApi},
+    on_chain_processor::OnChainTransactionEventPrinter,
+};
 use payday_core::PaydayResult;
-use payday_node_lnd::lnd::{Lnd, LndConfig};
+use payday_node_lnd::lnd::{Lnd, LndConfig, LndTransactionStream};
+use tokio::sync::Mutex;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() -> PaydayResult<()> {
@@ -15,6 +19,16 @@ async fn main() -> PaydayResult<()> {
         macaroon_file: "/home/protom/dev/btc/payday_rs/admin.macaroon".to_string(),
         network: Network::Signet,
     };
+
+    let lnd_stream = LndTransactionStream::new(
+        lnd_config.clone(),
+        Arc::new(Mutex::new(OnChainTransactionEventPrinter)),
+    );
+
+    let handle = lnd_stream
+        .process_events()
+        .expect("Could not process LND on-chain transaction stream");
+
     let lnd = Lnd::new(lnd_config).await?;
 
     let address = lnd.new_address().await?;
@@ -51,6 +65,7 @@ async fn main() -> PaydayResult<()> {
     //    println!("Pending: {:?}", event);
     //}
 
+    handle.await;
     println!("Done");
 
     // let subscription = lnd.subscribe_onchain_transactions(1190000).await?;

@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use bitcoin::{Address, Amount};
 use payday_core::PaydayResult;
+use tokio::task::JoinHandle;
 
 use crate::on_chain_processor::OnChainTransactionEvent;
 
@@ -46,6 +47,11 @@ pub trait OnChainApi: Send + Sync {
         outputs: HashMap<String, Amount>,
         sats_per_vbyte: Amount,
     ) -> PaydayResult<OnChainPaymentResult>;
+}
+
+#[async_trait]
+pub trait OnChainStreamApi {
+    fn process_events(&self) -> PaydayResult<JoinHandle<()>>;
 }
 
 #[derive(Debug)]
