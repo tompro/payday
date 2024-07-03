@@ -6,6 +6,7 @@ use bitcoin::network::ParseNetworkError;
 pub enum PaydayError {
     NodeConnectError(String),
     NodeApiError(String),
+    DbError(String),
     InvalidBitcoinAddress(String),
     InvalidBitcoinNetwork(String),
     InvalidBitcoinAmount(String),

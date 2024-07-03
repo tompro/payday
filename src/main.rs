@@ -6,8 +6,9 @@ use payday_btc::{
     on_chain_api::{OnChainApi, OnChainStreamApi},
     on_chain_processor::OnChainTransactionEventPrinter,
 };
-use payday_core::PaydayResult;
+use payday_core::{persistence::block_height::BlockHeightStoreApi, PaydayResult};
 use payday_node_lnd::lnd::{Lnd, LndConfig, LndTransactionStream};
+use payday_surrealdb::{block_height::BlockHeightStore, create_surreal_db};
 use tokio::sync::Mutex;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
@@ -37,6 +38,17 @@ async fn main() -> PaydayResult<()> {
     let balance = lnd.get_balance().await?;
     println!("{:?}", balance);
 
+    let db = create_surreal_db("rocksdb://./data", "test", "test").await?;
+    let block_height_store = BlockHeightStore::new(db);
+
+    let block_height = block_height_store.get_block_height("lnd").await?;
+    println!("{:?}", block_height);
+    block_height_store
+        .set_block_height("lnd", block_height.block_height + 1)
+        .await?;
+    let block_height = block_height_store.get_block_height("lnd").await?;
+    println!("{:?}", block_height);
+
     //let outputs = HashMap::from([
     //    (
     //        "tb1p96rerkjw5e5ul4fxatc8xjg0jhu7hy4ue57s7jwgyxj2c6shsxystfrxk4".to_string(),
@@ -65,7 +77,7 @@ async fn main() -> PaydayResult<()> {
     //    println!("Pending: {:?}", event);
     //}
 
-    handle.await;
+    handle.await.expect("could not subscribe to onchain stream");
     println!("Done");
 
     // let subscription = lnd.subscribe_onchain_transactions(1190000).await?;

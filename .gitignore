@@ -1,5 +1,6 @@
 /target
 */target
+/data
 admin.macaroon
 tls.cert
 .idea

@@ -1,0 +1,12 @@
+[package]
+name = "payday_surrealdb"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+payday_core = { path = "../payday_core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+async-trait = { workspace = true }
+surrealdb = { version = "1.5.3", features = ["kv-rocksdb"] }

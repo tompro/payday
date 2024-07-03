@@ -7,13 +7,14 @@ edition = "2021"
 payday_core = { path = "./payday_core" }
 payday_node_lnd = { path = "./payday_node_lnd" }
 payday_btc = { path = "./payday_btc" }
+payday_surrealdb = { path = "./payday_surrealdb" }
 tokio = { workspace = true }
 bitcoin = { workspace = true }
 serde = { workspace = true }
 tokio-stream = { workspace = true }
 
 [workspace]
-members = ["payday_btc", "payday_core", "payday_node_lnd"]
+members = ["payday_btc", "payday_core", "payday_node_lnd", "payday_surrealdb"]
 
 [workspace.dependencies]
 async-trait = "0.1.80"
