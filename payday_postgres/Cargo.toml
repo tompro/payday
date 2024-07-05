@@ -5,7 +5,11 @@ edition = "2021"
 
 [dependencies]
 payday_core = { path = "../payday_core" }
+payday_btc = { path = "../payday_btc" }
 async-trait = { workspace = true }
 cqrs-es = { workspace = true }
 sqlx = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
 postgres-es = { version = "0.4.11" }

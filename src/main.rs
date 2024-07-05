@@ -3,12 +3,20 @@ use std::sync::Arc;
 use bitcoin::Network;
 
 use payday_btc::{
+    on_chain_aggregate::{BtcOnChainInvoice, OnChainInvoiceCommand, OnChainInvoiceEvent},
     on_chain_api::{OnChainApi, OnChainStreamApi},
     on_chain_processor::OnChainTransactionEventPrinter,
 };
-use payday_core::{persistence::block_height::BlockHeightStoreApi, PaydayResult};
+use payday_core::{
+    payment::{amount::Amount, currency::Currency, invoice::PaymentProcessorApi},
+    persistence::block_height::BlockHeightStoreApi,
+    PaydayError, PaydayResult,
+};
 use payday_node_lnd::lnd::{Lnd, LndConfig, LndTransactionStream};
-use payday_postgres::{block_height::BlockHeightStore, create_postgres_pool};
+use payday_postgres::{
+    block_height::BlockHeightStore, create_btc_on_chain_processor, create_cqrs,
+    create_postgres_pool,
+};
 use tokio::sync::Mutex;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
@@ -51,6 +59,54 @@ async fn main() -> PaydayResult<()> {
         .await?;
     let block_height = block_height_store.get_block_height("lnd").await?;
     println!("{:?}", block_height);
+
+    let pool = create_postgres_pool("postgresql://postgres:password@localhost:5432/payday").await?;
+
+    //let event_store = create_cqrs::<BtcOnChainInvoice>(pool, Vec::new(), ()).await?;
+
+    let processor = create_btc_on_chain_processor(pool, "lnd", Box::new(lnd)).await?;
+
+    let invoice = processor
+        .create_invoice(
+            "asdf123".to_string(),
+            Amount::new(Currency::Btc, 100000),
+            None,
+        )
+        .await?;
+    println!("Created invoice {:?}", invoice);
+
+    //event_store
+    //    .execute(
+    //        &address.to_string(),
+    //        OnChainInvoiceCommand::CreateInvoice {
+    //            invoice_id: "123".to_string(),
+    //            amount: Amount::new(Currency::Btc, 100000),
+    //            address: address.to_string(),
+    //        },
+    //    )
+    //    .await
+    //    .map_err(|e| PaydayError::DbError(e.to_string()))?;
+
+    //event_store
+    //    .execute(
+    //        &address.to_string(),
+    //        OnChainInvoiceCommand::SetPending {
+    //            amount: Amount::new(Currency::Btc, 50000),
+    //        },
+    //    )
+    //    .await
+    //    .map_err(|e| PaydayError::DbError(e.to_string()))?;
+
+    //event_store
+    //    .execute(
+    //        &address.to_string(),
+    //        OnChainInvoiceCommand::SetConfirmed {
+    //            confirmations: 1,
+    //            amount: Amount::new(Currency::Btc, 100000),
+    //        },
+    //    )
+    //    .await
+    //    .map_err(|e| PaydayError::DbError(e.to_string()))?;
 
     //let outputs = HashMap::from([
     //    (

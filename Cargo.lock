@@ -2479,6 +2479,7 @@ dependencies = [
  "currencies",
  "serde",
  "serde_json",
+ "tokio",
  "tokio-stream",
 ]
 
@@ -2502,9 +2503,13 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "cqrs-es",
+ "payday_btc",
  "payday_core",
  "postgres-es",
+ "serde",
+ "serde_json",
  "sqlx",
+ "tokio",
 ]
 
 [[package]]

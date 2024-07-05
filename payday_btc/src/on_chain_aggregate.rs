@@ -93,7 +93,7 @@ impl Aggregate for BtcOnChainInvoice {
     type Command = OnChainInvoiceCommand;
     type Event = OnChainInvoiceEvent;
     type Error = InvoiceError;
-    type Services = OnChainInvoiceServices;
+    type Services = ();
 
     fn aggregate_type() -> String {
         "BtcOnChainInvoice".to_string()
@@ -190,7 +190,7 @@ mod aggregate_tests {
     #[test]
     fn test_create_invoice() {
         let expected = mock_created_event(100_000);
-        OnChainInvoiceTestFramework::with(mock_address_service())
+        OnChainInvoiceTestFramework::with(())
             .given_no_previous_events()
             .when(OnChainInvoiceCommand::CreateInvoice {
                 invoice_id: "123".to_string(),
@@ -204,7 +204,7 @@ mod aggregate_tests {
     fn test_set_pending() {
         let amount = amount_fn(100_000);
         let expected = mock_pending_event(amount.amount, false, false);
-        OnChainInvoiceTestFramework::with(mock_address_service())
+        OnChainInvoiceTestFramework::with(())
             .given(vec![mock_created_event(100_000)])
             .when(OnChainInvoiceCommand::SetPending { amount })
             .then_expect_events(vec![expected])
@@ -214,7 +214,7 @@ mod aggregate_tests {
     fn test_pending_overpayment() {
         let amount = amount_fn(100_001);
         let expected = mock_pending_event(amount.amount, false, true);
-        OnChainInvoiceTestFramework::with(mock_address_service())
+        OnChainInvoiceTestFramework::with(())
             .given(vec![mock_created_event(100_000)])
             .when(OnChainInvoiceCommand::SetPending { amount })
             .then_expect_events(vec![expected])
@@ -224,7 +224,7 @@ mod aggregate_tests {
     fn test_pending_underpayment() {
         let amount = amount_fn(99_999);
         let expected = mock_pending_event(amount.amount, true, false);
-        OnChainInvoiceTestFramework::with(mock_address_service())
+        OnChainInvoiceTestFramework::with(())
             .given(vec![mock_created_event(100_000)])
             .when(OnChainInvoiceCommand::SetPending { amount })
             .then_expect_events(vec![expected])
@@ -238,7 +238,7 @@ mod aggregate_tests {
             overpayment: false,
             confirmations: 1,
         };
-        OnChainInvoiceTestFramework::with(mock_address_service())
+        OnChainInvoiceTestFramework::with(())
             .given(vec![mock_created_event(100_000)])
             .when(OnChainInvoiceCommand::SetConfirmed {
                 confirmations: 1,
@@ -270,12 +270,4 @@ mod aggregate_tests {
             address: "tb1q6xm2qgh5r83lvmmu0v7c3d4wrd9k2uxu3sgcr4".to_string(),
         }
     }
-
-    fn mock_address_service() -> OnChainInvoiceServices {
-        OnChainInvoiceServices {}
-    }
-
-    struct MockAddressService;
-    #[async_trait]
-    impl OnChainInvoiceService for MockAddressService {}
 }

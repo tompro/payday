@@ -3,6 +3,7 @@ use std::fmt::{Display, Formatter};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tokio::task::JoinHandle;
 
 use crate::{payment::amount::Amount, PaydayResult};
 
@@ -43,7 +44,7 @@ pub struct Invoice {
 }
 
 #[async_trait]
-pub trait PaymentProcessorApi {
+pub trait PaymentProcessorApi: Send + Sync {
     /// A unique name for this processor.
     fn name(&self) -> String;
 
@@ -59,5 +60,5 @@ pub trait PaymentProcessorApi {
     ) -> PaydayResult<Invoice>;
 
     /// Processes payment events for this system.
-    async fn process_payment_events(&self) -> PaydayResult<()>;
+    fn process_payment_events(&self) -> PaydayResult<JoinHandle<()>>;
 }
