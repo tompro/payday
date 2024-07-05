@@ -1,6 +1,6 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
-use bitcoin::{Amount, Network};
+use bitcoin::Network;
 
 use payday_btc::{
     on_chain_api::{OnChainApi, OnChainStreamApi},
@@ -8,7 +8,7 @@ use payday_btc::{
 };
 use payday_core::{persistence::block_height::BlockHeightStoreApi, PaydayResult};
 use payday_node_lnd::lnd::{Lnd, LndConfig, LndTransactionStream};
-use payday_surrealdb::{block_height::BlockHeightStore, create_surreal_db};
+use payday_postgres::{block_height::BlockHeightStore, create_postgres_pool};
 use tokio::sync::Mutex;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
@@ -38,8 +38,11 @@ async fn main() -> PaydayResult<()> {
     let balance = lnd.get_balance().await?;
     println!("{:?}", balance);
 
-    let db = create_surreal_db("rocksdb://./data", "test", "test").await?;
-    let block_height_store = BlockHeightStore::new(db);
+    let pool = create_postgres_pool("postgresql://postgres:password@localhost:5432/payday").await?;
+    let block_height_store = BlockHeightStore::new(pool);
+
+    //let db = create_surreal_db("rocksdb://./data", "test", "test").await?;
+    //let block_height_store = BlockHeightStore::new(db);
 
     let block_height = block_height_store.get_block_height("lnd").await?;
     println!("{:?}", block_height);

@@ -1,0 +1,11 @@
+[package]
+name = "payday_postgres"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+payday_core = { path = "../payday_core" }
+async-trait = { workspace = true }
+cqrs-es = { workspace = true }
+sqlx = { workspace = true }
+postgres-es = { version = "0.4.11" }
