@@ -12,7 +12,7 @@ use payday_core::{
     persistence::block_height::BlockHeightStoreApi,
     PaydayError, PaydayResult,
 };
-use payday_node_lnd::lnd::{Lnd, LndConfig, LndTransactionStream};
+use payday_node_lnd::lnd::{Lnd, LndConfig, LndOnChainPaymentEventStream, LndTransactionStream};
 use payday_postgres::{
     block_height::BlockHeightStore, create_btc_on_chain_processor, create_cqrs,
     create_postgres_pool,
@@ -29,16 +29,16 @@ async fn main() -> PaydayResult<()> {
         network: Network::Signet,
     };
 
-    let lnd_stream = LndTransactionStream::new(
-        lnd_config.clone(),
-        Arc::new(Mutex::new(OnChainTransactionEventPrinter)),
-    );
+    //let lnd_stream = LndTransactionStream::new(
+    //    lnd_config.clone(),
+    //    Arc::new(Mutex::new(OnChainTransactionEventPrinter)),
+    //);
 
-    let handle = lnd_stream
-        .process_events()
-        .expect("Could not process LND on-chain transaction stream");
+    //let handle = lnd_stream
+    //    .process_events()
+    //    .expect("Could not process LND on-chain transaction stream");
 
-    let lnd = Lnd::new(lnd_config).await?;
+    let lnd = Lnd::new(lnd_config.clone()).await?;
 
     let address = lnd.new_address().await?;
     println!("{:?}", address);
@@ -63,12 +63,16 @@ async fn main() -> PaydayResult<()> {
     let pool = create_postgres_pool("postgresql://postgres:password@localhost:5432/payday").await?;
 
     //let event_store = create_cqrs::<BtcOnChainInvoice>(pool, Vec::new(), ()).await?;
+    let tx_stream = LndOnChainPaymentEventStream::new(lnd_config.clone());
 
-    let processor = create_btc_on_chain_processor(pool, "lnd", Box::new(lnd)).await?;
+    let processor =
+        create_btc_on_chain_processor(pool, "lnd", Box::new(lnd), Box::new(tx_stream)).await?;
+
+    let bind = processor.process_payment_events();
 
     let invoice = processor
         .create_invoice(
-            "asdf123".to_string(),
+            "myverynewuuid".to_string(),
             Amount::new(Currency::Btc, 100000),
             None,
         )
@@ -136,7 +140,8 @@ async fn main() -> PaydayResult<()> {
     //    println!("Pending: {:?}", event);
     //}
 
-    handle.await.expect("could not subscribe to onchain stream");
+    //handle.await.expect("could not subscribe to onchain stream");
+    bind.await.expect("done subscriber");
     println!("Done");
 
     // let subscription = lnd.subscribe_onchain_transactions(1190000).await?;

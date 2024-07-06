@@ -9,15 +9,19 @@ use fedimint_tonic_lnd::{
 };
 use payday_btc::{
     on_chain_api::{
-        Balance, ChannelBalance, OnChainApi, OnChainBalance, OnChainPaymentResult, OnChainStreamApi,
+        Balance, ChannelBalance, OnChainApi, OnChainBalance, OnChainPaymentResult,
+        OnChainStreamApi, OnChainTransactionStreamSubscriber,
     },
     on_chain_processor::{
         OnChainTransaction, OnChainTransactionEvent, OnChainTransactionEventProcessor,
     },
     to_address,
 };
-use payday_core::PaydayResult;
-use tokio::{sync::Mutex, task::JoinHandle};
+use payday_core::{PaydayResult, PaydayStream};
+use tokio::{
+    sync::{mpsc::Receiver, Mutex},
+    task::JoinHandle,
+};
 use tokio_stream::StreamExt;
 
 use crate::wrapper::LndRpcWrapper;
@@ -245,5 +249,52 @@ impl OnChainStreamApi for LndTransactionStream {
         });
 
         Ok(handle)
+    }
+}
+
+pub struct LndOnChainPaymentEventStream {
+    config: LndConfig,
+}
+
+impl LndOnChainPaymentEventStream {
+    pub fn new(config: LndConfig) -> Self {
+        Self { config }
+    }
+}
+
+impl OnChainTransactionStreamSubscriber for LndOnChainPaymentEventStream {
+    fn subscribe_events(&self) -> PaydayResult<Receiver<OnChainTransactionEvent>> {
+        let config = self.config.clone();
+        let (tx, rx) = tokio::sync::mpsc::channel::<OnChainTransactionEvent>(100);
+
+        tokio::spawn(async move {
+            let sender = tx.clone();
+            let mut lnd: Client = fedimint_tonic_lnd::connect(
+                config.address.to_string(),
+                config.cert_path.to_string(),
+                config.macaroon_file.to_string(),
+            )
+            .await
+            .expect("Failed to connect to LND on-chain transaction stream");
+
+            let mut stream = lnd
+                .lightning()
+                .subscribe_transactions(GetTransactionsRequest::default())
+                .await
+                .expect("Failed to subscribe to LND on-chain transaction events")
+                .into_inner()
+                .filter(|tx| tx.is_ok())
+                .map(|tx| tx.unwrap());
+
+            while let Some(event) = stream.next().await {
+                let events = to_on_chain_events(&event, config.network)
+                    .expect("Failed to parse LND on-chain transaction");
+
+                for event in events {
+                    sender.send(event).await.expect("stream closed");
+                }
+            }
+        });
+        Ok(rx)
     }
 }

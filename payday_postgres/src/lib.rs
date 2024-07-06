@@ -5,7 +5,7 @@ use btc_onchain::OnChainProcessor;
 use cqrs_es::{Aggregate, Query};
 use payday_btc::{
     on_chain_aggregate::BtcOnChainInvoice,
-    on_chain_api::{OnChainApi, OnChainStreamApi},
+    on_chain_api::{OnChainApi, OnChainTransactionStreamSubscriber},
 };
 use payday_core::{persistence::cqrs::Cqrs, PaydayError, PaydayResult};
 use postgres_es::{postgres_cqrs, PostgresEventRepository};
@@ -34,12 +34,14 @@ pub async fn create_btc_on_chain_processor(
     pool: Pool<Postgres>,
     name: &str,
     on_chain_api: Box<dyn OnChainApi>,
+    tx_stream: Box<dyn OnChainTransactionStreamSubscriber>,
 ) -> PaydayResult<OnChainProcessor> {
     let cqrs = create_cqrs::<BtcOnChainInvoice>(pool, Vec::new(), ()).await?;
     Ok(OnChainProcessor::new(
         name.to_string(),
         "btc_onchain".to_string(),
         on_chain_api,
+        tx_stream,
         cqrs,
     ))
 }

@@ -1,13 +1,13 @@
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use payday_btc::{
     on_chain_aggregate::{BtcOnChainInvoice, OnChainInvoiceCommand},
-    on_chain_api::{OnChainApi, OnChainStreamApi},
+    on_chain_api::{OnChainApi, OnChainTransactionStreamSubscriber},
+    on_chain_processor::OnChainTransactionEvent,
 };
 use payday_core::{
     payment::{
         amount::Amount,
+        currency::Currency,
         invoice::{Invoice, InvoiceId, PaymentProcessorApi, PaymentType},
     },
     PaydayError, PaydayResult,
@@ -20,6 +20,7 @@ pub struct OnChainProcessor {
     name: String,
     supported_payment_type: PaymentType,
     on_chain_api: Box<dyn OnChainApi>,
+    tx_stream: Box<dyn OnChainTransactionStreamSubscriber>,
     cqrs: PostgresCqrs<BtcOnChainInvoice>,
 }
 
@@ -28,12 +29,14 @@ impl OnChainProcessor {
         name: String,
         supported_payment_type: PaymentType,
         on_chain_api: Box<dyn OnChainApi>,
+        tx_stream: Box<dyn OnChainTransactionStreamSubscriber>,
         cqrs: PostgresCqrs<BtcOnChainInvoice>,
     ) -> Self {
         Self {
             name,
             supported_payment_type,
             on_chain_api,
+            tx_stream,
             cqrs,
         }
     }
@@ -76,7 +79,42 @@ impl PaymentProcessorApi for OnChainProcessor {
         })
     }
 
-    fn process_payment_events(&self) -> PaydayResult<JoinHandle<()>> {
-        todo!()
+    async fn process_payment_events(&self) -> PaydayResult<()> {
+        let mut subscriber = self.tx_stream.subscribe_events()?;
+        while let Some(event) = subscriber.recv().await {
+            let (aggregate_id, command) = match event {
+                OnChainTransactionEvent::ReceivedConfirmed(tx) => (
+                    tx.address,
+                    OnChainInvoiceCommand::SetConfirmed {
+                        confirmations: tx.confirmations as u64,
+                        amount: Amount::new(Currency::Btc, tx.amount.to_sat()),
+                    },
+                ),
+                OnChainTransactionEvent::ReceivedUnconfirmed(tx) => (
+                    tx.address,
+                    OnChainInvoiceCommand::SetPending {
+                        amount: Amount::new(Currency::Btc, tx.amount.to_sat()),
+                    },
+                ),
+                OnChainTransactionEvent::SentConfirmed(tx) => (
+                    tx.address,
+                    OnChainInvoiceCommand::SetConfirmed {
+                        confirmations: tx.confirmations as u64,
+                        amount: Amount::new(Currency::Btc, tx.amount.to_sat()),
+                    },
+                ),
+                OnChainTransactionEvent::SentUnconfirmed(tx) => (
+                    tx.address,
+                    OnChainInvoiceCommand::SetPending {
+                        amount: Amount::new(Currency::Btc, tx.amount.to_sat()),
+                    },
+                ),
+            };
+            self.cqrs
+                .execute(&aggregate_id.to_string(), command)
+                .await
+                .map_err(|e| PaydayError::DbError(e.to_string()))?;
+        }
+        Ok(())
     }
 }

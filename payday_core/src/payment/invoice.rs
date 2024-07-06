@@ -60,5 +60,5 @@ pub trait PaymentProcessorApi: Send + Sync {
     ) -> PaydayResult<Invoice>;
 
     /// Processes payment events for this system.
-    fn process_payment_events(&self) -> PaydayResult<JoinHandle<()>>;
+    async fn process_payment_events(&self) -> PaydayResult<()>;
 }
