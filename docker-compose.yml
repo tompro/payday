@@ -1,0 +1,14 @@
+version: "3.7"
+
+services:
+  surreal:
+    image: surrealdb/surrealdb:latest
+    user: "${UID}:${GID}"
+    entrypoint:
+      - /surreal
+      - start
+      - file:/data/surreal/payday.db
+    volumes:
+      - ./docker-data/surreal:/data/surreal
+    ports:
+      - 8000:8000

@@ -72,24 +72,32 @@ impl LndRpcWrapper {
         self.client.lock().await
     }
 
-    /// Get the current balances (onchain and lightning) of the wallet.
-    pub async fn get_balances(
-        &self,
-    ) -> PaydayResult<(WalletBalanceResponse, ChannelBalanceResponse)> {
+    pub async fn get_onchain_balance(&self) -> PaydayResult<WalletBalanceResponse> {
         let mut lnd = self.client().await;
-        let on_chain = lnd
+        Ok(lnd
             .lightning()
             .wallet_balance(WalletBalanceRequest {})
             .await
             .map_err(|e| PaydayError::NodeApiError(e.to_string()))?
-            .into_inner();
+            .into_inner())
+    }
 
-        let lightning = lnd
+    pub async fn get_channel_balance(&self) -> PaydayResult<ChannelBalanceResponse> {
+        let mut lnd = self.client().await;
+        Ok(lnd
             .lightning()
             .channel_balance(ChannelBalanceRequest {})
             .await
             .map_err(|e| PaydayError::NodeApiError(e.to_string()))?
-            .into_inner();
+            .into_inner())
+    }
+
+    /// Get the current balances (onchain and lightning) of the wallet.
+    pub async fn get_balances(
+        &self,
+    ) -> PaydayResult<(WalletBalanceResponse, ChannelBalanceResponse)> {
+        let on_chain = self.get_onchain_balance().await?;
+        let lightning = self.get_channel_balance().await?;
         Ok((on_chain, lightning))
     }
 

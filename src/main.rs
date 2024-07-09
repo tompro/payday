@@ -3,20 +3,12 @@ use std::sync::Arc;
 use bitcoin::Network;
 
 use payday_btc::{
-    on_chain_aggregate::{BtcOnChainInvoice, OnChainInvoiceCommand, OnChainInvoiceEvent},
-    on_chain_api::{OnChainApi, OnChainStreamApi},
-    on_chain_processor::OnChainTransactionEventPrinter,
+    on_chain_api::{GetOnChainBalanceApi, OnChainInvoiceApi, OnChainStreamApi},
+    on_chain_processor::{OnChainTransactionPrintHandler, OnChainTransactionProcessor},
 };
-use payday_core::{
-    payment::{amount::Amount, currency::Currency, invoice::PaymentProcessorApi},
-    persistence::block_height::BlockHeightStoreApi,
-    PaydayError, PaydayResult,
-};
-use payday_node_lnd::lnd::{Lnd, LndConfig, LndOnChainPaymentEventStream, LndTransactionStream};
-use payday_postgres::{
-    block_height::BlockHeightStore, create_btc_on_chain_processor, create_cqrs,
-    create_postgres_pool,
-};
+use payday_core::PaydayResult;
+use payday_node_lnd::lnd::{Lnd, LndConfig, LndTransactionStream};
+use payday_surrealdb::{block_height::BlockHeightStore, create_surreal_db};
 use tokio::sync::Mutex;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
@@ -43,41 +35,43 @@ async fn main() -> PaydayResult<()> {
     let address = lnd.new_address().await?;
     println!("{:?}", address);
 
-    let balance = lnd.get_balance().await?;
+    let balance = lnd.get_onchain_balance().await?;
     println!("{:?}", balance);
 
-    let pool = create_postgres_pool("postgresql://postgres:password@localhost:5432/payday").await?;
-    let block_height_store = BlockHeightStore::new(pool);
+    // let pool = create_postgres_pool("postgresql://postgres:password@localhost:5432/payday").await?;
+    // let block_height_store = BlockHeightStore::new(pool);
 
-    //let db = create_surreal_db("rocksdb://./data", "test", "test").await?;
-    //let block_height_store = BlockHeightStore::new(db);
+    let db = create_surreal_db("ws://localhost:8000", "payday", "payday").await?;
+    let block_height_store = BlockHeightStore::new(db);
 
-    let block_height = block_height_store.get_block_height("lnd").await?;
-    println!("{:?}", block_height);
-    block_height_store
-        .set_block_height("lnd", block_height.block_height + 1)
-        .await?;
-    let block_height = block_height_store.get_block_height("lnd").await?;
-    println!("{:?}", block_height);
+    //let block_height = block_height_store.get_block_height("lnd").await?;
 
-    let pool = create_postgres_pool("postgresql://postgres:password@localhost:5432/payday").await?;
+    let processor = OnChainTransactionProcessor::new(
+        "lnd",
+        Box::new(block_height_store),
+        Box::new(OnChainTransactionPrintHandler),
+    );
+
+    let stream =
+        LndTransactionStream::new(lnd_config.clone(), Arc::new(Mutex::new(processor)), None);
+    let handle = stream.process_events().await?;
 
     //let event_store = create_cqrs::<BtcOnChainInvoice>(pool, Vec::new(), ()).await?;
-    let tx_stream = LndOnChainPaymentEventStream::new(lnd_config.clone());
+    //let tx_stream = LndOnChainPaymentEventStream::new(lnd_config.clone());
 
-    let processor =
-        create_btc_on_chain_processor(pool, "lnd", Box::new(lnd), Box::new(tx_stream)).await?;
+    //let processor =
+    //    create_btc_on_chain_processor(pool, "lnd", Box::new(lnd), Box::new(tx_stream)).await?;
 
-    let bind = processor.process_payment_events();
+    //let bind = processor.process_payment_events();
 
-    let invoice = processor
-        .create_invoice(
-            "myverynewuuid".to_string(),
-            Amount::new(Currency::Btc, 100000),
-            None,
-        )
-        .await?;
-    println!("Created invoice {:?}", invoice);
+    //let invoice = processor
+    //    .create_invoice(
+    //        "myverynewuuid".to_string(),
+    //        Amount::new(Currency::Btc, 100000),
+    //        None,
+    //    )
+    //    .await?;
+    //println!("Created invoice {:?}", invoice);
 
     //event_store
     //    .execute(
@@ -140,8 +134,8 @@ async fn main() -> PaydayResult<()> {
     //    println!("Pending: {:?}", event);
     //}
 
-    //handle.await.expect("could not subscribe to onchain stream");
-    bind.await.expect("done subscriber");
+    handle.await.expect("could not subscribe to onchain stream");
+    //bind.await.expect("done subscriber");
     println!("Done");
 
     // let subscription = lnd.subscribe_onchain_transactions(1190000).await?;

@@ -3,25 +3,24 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use bitcoin::{Address, Amount};
 use payday_core::PaydayResult;
-use tokio::{sync::mpsc::Receiver, task::JoinHandle};
+use tokio::task::JoinHandle;
 
 use crate::on_chain_processor::OnChainTransactionEvent;
 
 #[async_trait]
-pub trait OnChainApi: Send + Sync {
-    /// Get the current balances (onchain and lightning) of the wallet.
-    async fn get_balance(&self) -> PaydayResult<Balance>;
+pub trait GetOnChainBalanceApi: Send + Sync {
+    /// Get the current OnChain balance of the wallet.
+    async fn get_onchain_balance(&self) -> PaydayResult<OnChainBalance>;
+}
 
+#[async_trait]
+pub trait OnChainInvoiceApi: Send + Sync {
     /// Get a new onchain address for the wallet.
     async fn new_address(&self) -> PaydayResult<Address>;
+}
 
-    /// Get history of onchain transactions between start_height and end_height.
-    async fn get_onchain_transactions(
-        &self,
-        start_height: i32,
-        end_height: i32,
-    ) -> PaydayResult<Vec<OnChainTransactionEvent>>;
-
+#[async_trait]
+pub trait OnChainPaymentApi: Send + Sync {
     /// Given an onchain address string, parses and validates that it is a valid
     /// address for this nodes network.
     fn validate_address(&self, address: &str) -> PaydayResult<Address>;
@@ -50,13 +49,18 @@ pub trait OnChainApi: Send + Sync {
 }
 
 #[async_trait]
-pub trait OnChainStreamApi: Send + Sync {
-    fn process_events(&self) -> PaydayResult<JoinHandle<()>>;
+pub trait OnChainTransactionApi: Send + Sync {
+    /// Get history of onchain transactions between start_height and end_height.
+    async fn get_onchain_transactions(
+        &self,
+        start_height: i32,
+        end_height: i32,
+    ) -> PaydayResult<Vec<OnChainTransactionEvent>>;
 }
 
 #[async_trait]
-pub trait OnChainTransactionStreamSubscriber: Send + Sync {
-    fn subscribe_events(&self) -> PaydayResult<Receiver<OnChainTransactionEvent>>;
+pub trait OnChainStreamApi: Send + Sync {
+    async fn process_events(&self) -> PaydayResult<JoinHandle<()>>;
 }
 
 #[derive(Debug)]

@@ -1,7 +1,7 @@
 use payday_core::{PaydayError, PaydayResult};
 use surrealdb::{
     engine::any::{self, Any},
-    Error, Surreal,
+    Surreal,
 };
 
 pub mod block_height;

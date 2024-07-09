@@ -5,6 +5,8 @@ use payday_core::payment::currency::Currency;
 use payday_core::payment::invoice::{InvoiceError, InvoiceId};
 use serde::{Deserialize, Serialize};
 
+use crate::on_chain_processor::OnChainTransactionEvent;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BtcOnChainInvoice {
     pub invoice_id: InvoiceId,
@@ -12,6 +14,7 @@ pub struct BtcOnChainInvoice {
     pub amount: Amount,
     pub received_amount: Amount,
     pub confirmations: u64,
+    pub transaction_id: Option<String>,
     pub underpayment: bool,
     pub overpayment: bool,
     pub paid: bool,
@@ -25,6 +28,7 @@ impl Default for BtcOnChainInvoice {
             amount: Amount::zero(Currency::Btc),
             received_amount: Amount::zero(Currency::Btc),
             confirmations: 0,
+            transaction_id: None,
             underpayment: false,
             overpayment: false,
             paid: false,
@@ -50,7 +54,53 @@ pub enum OnChainInvoiceCommand {
     SetConfirmed {
         confirmations: u64,
         amount: Amount,
+        transaction_id: String,
     },
+}
+
+#[derive(Debug)]
+pub struct OnChainCommand {
+    pub id: String,
+    pub command: OnChainInvoiceCommand,
+}
+
+impl From<OnChainTransactionEvent> for OnChainCommand {
+    fn from(value: OnChainTransactionEvent) -> Self {
+        let (aggregate_id, command) = match value {
+            OnChainTransactionEvent::ReceivedConfirmed(tx) => (
+                tx.address,
+                OnChainInvoiceCommand::SetConfirmed {
+                    confirmations: tx.confirmations as u64,
+                    amount: Amount::new(Currency::Btc, tx.amount.to_sat()),
+                    transaction_id: tx.tx_id.to_owned(),
+                },
+            ),
+            OnChainTransactionEvent::ReceivedUnconfirmed(tx) => (
+                tx.address,
+                OnChainInvoiceCommand::SetPending {
+                    amount: Amount::new(Currency::Btc, tx.amount.to_sat()),
+                },
+            ),
+            OnChainTransactionEvent::SentConfirmed(tx) => (
+                tx.address,
+                OnChainInvoiceCommand::SetConfirmed {
+                    confirmations: tx.confirmations as u64,
+                    amount: Amount::new(Currency::Btc, tx.amount.to_sat()),
+                    transaction_id: tx.tx_id.to_owned(),
+                },
+            ),
+            OnChainTransactionEvent::SentUnconfirmed(tx) => (
+                tx.address,
+                OnChainInvoiceCommand::SetPending {
+                    amount: Amount::new(Currency::Btc, tx.amount.to_sat()),
+                },
+            ),
+        };
+        OnChainCommand {
+            id: aggregate_id.to_string(),
+            command,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -70,6 +120,7 @@ pub enum OnChainInvoiceEvent {
         underpayment: bool,
         overpayment: bool,
         confirmations: u64,
+        transaction_id: String,
     },
 }
 
@@ -133,11 +184,13 @@ impl Aggregate for BtcOnChainInvoice {
             OnChainInvoiceCommand::SetConfirmed {
                 confirmations,
                 amount,
+                transaction_id,
             } => Ok(vec![OnChainInvoiceEvent::PaymentConfirmed {
                 received_amount: amount,
                 underpayment: amount.amount < self.amount.amount,
                 overpayment: amount.amount > self.amount.amount,
                 confirmations,
+                transaction_id,
             }]),
         }
     }
@@ -167,12 +220,14 @@ impl Aggregate for BtcOnChainInvoice {
                 underpayment,
                 overpayment,
                 confirmations,
+                transaction_id,
             } => {
                 self.received_amount = received_amount;
                 self.underpayment = underpayment;
                 self.overpayment = overpayment;
                 self.confirmations = confirmations;
                 self.paid = true;
+                self.transaction_id = Some(transaction_id);
             }
         }
     }
@@ -237,12 +292,14 @@ mod aggregate_tests {
             underpayment: false,
             overpayment: false,
             confirmations: 1,
+            transaction_id: "txid".to_string(),
         };
         OnChainInvoiceTestFramework::with(())
             .given(vec![mock_created_event(100_000)])
             .when(OnChainInvoiceCommand::SetConfirmed {
                 confirmations: 1,
                 amount: Amount::new(Currency::Btc, 100_000),
+                transaction_id: "txid".to_string(),
             })
             .then_expect_events(vec![expected])
     }

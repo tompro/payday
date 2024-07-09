@@ -1,6 +1,7 @@
 /target
 */target
 /data
+/docker-data
 admin.macaroon
 tls.cert
 .idea
