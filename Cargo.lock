@@ -2241,6 +2241,7 @@ dependencies = [
  "payday_postgres",
  "payday_surrealdb",
  "serde",
+ "serde_json",
  "tokio",
  "tokio-stream",
 ]
@@ -2255,6 +2256,7 @@ dependencies = [
  "serde_json",
  "surrealdb",
  "tokio",
+ "tokio-stream",
 ]
 
 [[package]]

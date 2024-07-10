@@ -12,6 +12,7 @@ payday_postgres = { path = "./payday_postgres" }
 tokio = { workspace = true }
 bitcoin = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 tokio-stream = { workspace = true }
 
 [workspace]
@@ -33,3 +34,4 @@ currencies = "0.4.1"
 cqrs-es = "0.4.11"
 tokio = { version = "1.38.0", features = ["full"] }
 sqlx = { version = "0.7", features = ["postgres", "json"] }
+futures = "0.3.30"

@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use bitcoin::Network;
 
@@ -6,10 +6,23 @@ use payday_btc::{
     on_chain_api::{GetOnChainBalanceApi, OnChainInvoiceApi, OnChainStreamApi},
     on_chain_processor::{OnChainTransactionPrintHandler, OnChainTransactionProcessor},
 };
-use payday_core::PaydayResult;
+use payday_core::{
+    events::{publisher::Publisher, GenericEvent},
+    PaydayResult,
+};
 use payday_node_lnd::lnd::{Lnd, LndConfig, LndTransactionStream};
-use payday_surrealdb::{block_height::BlockHeightStore, create_surreal_db};
+use payday_surrealdb::{
+    block_height::BlockHeightStore, create_surreal_db, event_stream::EventStream,
+};
+use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TestPayload {
+    name: String,
+    processed: bool,
+    sequence: u64,
+}
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() -> PaydayResult<()> {
@@ -21,15 +34,6 @@ async fn main() -> PaydayResult<()> {
         network: Network::Signet,
     };
 
-    //let lnd_stream = LndTransactionStream::new(
-    //    lnd_config.clone(),
-    //    Arc::new(Mutex::new(OnChainTransactionEventPrinter)),
-    //);
-
-    //let handle = lnd_stream
-    //    .process_events()
-    //    .expect("Could not process LND on-chain transaction stream");
-
     let lnd = Lnd::new(lnd_config.clone()).await?;
 
     let address = lnd.new_address().await?;
@@ -38,73 +42,31 @@ async fn main() -> PaydayResult<()> {
     let balance = lnd.get_onchain_balance().await?;
     println!("{:?}", balance);
 
-    // let pool = create_postgres_pool("postgresql://postgres:password@localhost:5432/payday").await?;
-    // let block_height_store = BlockHeightStore::new(pool);
-
     let db = create_surreal_db("ws://localhost:8000", "payday", "payday").await?;
-    let block_height_store = BlockHeightStore::new(db);
-
-    //let block_height = block_height_store.get_block_height("lnd").await?;
-
+    let block_height_store = BlockHeightStore::new(db.clone());
     let processor = OnChainTransactionProcessor::new(
         "lnd",
         Box::new(block_height_store),
         Box::new(OnChainTransactionPrintHandler),
     );
-
     let stream =
         LndTransactionStream::new(lnd_config.clone(), Arc::new(Mutex::new(processor)), None);
     let handle = stream.process_events().await?;
 
-    //let event_store = create_cqrs::<BtcOnChainInvoice>(pool, Vec::new(), ()).await?;
-    //let tx_stream = LndOnChainPaymentEventStream::new(lnd_config.clone());
-
-    //let processor =
-    //    create_btc_on_chain_processor(pool, "lnd", Box::new(lnd), Box::new(tx_stream)).await?;
-
-    //let bind = processor.process_payment_events();
-
-    //let invoice = processor
-    //    .create_invoice(
-    //        "myverynewuuid".to_string(),
-    //        Amount::new(Currency::Btc, 100000),
-    //        None,
-    //    )
-    //    .await?;
-    //println!("Created invoice {:?}", invoice);
-
-    //event_store
-    //    .execute(
-    //        &address.to_string(),
-    //        OnChainInvoiceCommand::CreateInvoice {
-    //            invoice_id: "123".to_string(),
-    //            amount: Amount::new(Currency::Btc, 100000),
-    //            address: address.to_string(),
-    //        },
-    //    )
-    //    .await
-    //    .map_err(|e| PaydayError::DbError(e.to_string()))?;
-
-    //event_store
-    //    .execute(
-    //        &address.to_string(),
-    //        OnChainInvoiceCommand::SetPending {
-    //            amount: Amount::new(Currency::Btc, 50000),
-    //        },
-    //    )
-    //    .await
-    //    .map_err(|e| PaydayError::DbError(e.to_string()))?;
-
-    //event_store
-    //    .execute(
-    //        &address.to_string(),
-    //        OnChainInvoiceCommand::SetConfirmed {
-    //            confirmations: 1,
-    //            amount: Amount::new(Currency::Btc, 100000),
-    //        },
-    //    )
-    //    .await
-    //    .map_err(|e| PaydayError::DbError(e.to_string()))?;
+    let publisher = EventStream::new(db.clone(), "events");
+    let publish_handle = publisher.subscribe().await?;
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    publisher
+        .publish(GenericEvent::new(
+            "test".to_string(),
+            serde_json::to_value(TestPayload {
+                name: "test".to_string(),
+                processed: false,
+                sequence: 0,
+            })
+            .unwrap(),
+        ))
+        .await?;
 
     //let outputs = HashMap::from([
     //    (
@@ -133,8 +95,8 @@ async fn main() -> PaydayResult<()> {
     //for event in pending {
     //    println!("Pending: {:?}", event);
     //}
-
-    handle.await.expect("could not subscribe to onchain stream");
+    let (_, _) = tokio::join!(handle, publish_handle);
+    //handle.await.expect("could not subscribe to onchain stream");
     //bind.await.expect("done subscriber");
     println!("Done");
 

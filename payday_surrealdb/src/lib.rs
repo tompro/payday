@@ -5,6 +5,7 @@ use surrealdb::{
 };
 
 pub mod block_height;
+pub mod event_stream;
 
 pub async fn create_surreal_db(
     path: &str,

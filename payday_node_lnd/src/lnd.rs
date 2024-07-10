@@ -178,7 +178,7 @@ fn to_on_chain_events(
                     tx_id: tx.tx_hash.to_owned(),
                     block_height: tx.block_height,
                     confirmations: tx.num_confirmations,
-                    amount: to_amount(tx.amount),
+                    amount: Amount::from_sat(tx.amount.unsigned_abs()),
                     address,
                 };
 

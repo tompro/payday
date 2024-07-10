@@ -5,6 +5,7 @@ use tokio_stream::Stream;
 pub use error::PaydayError;
 
 pub mod error;
+pub mod events;
 pub mod payment;
 pub mod persistence;
 
