@@ -43,7 +43,7 @@ where
     S: Serializer,
 {
     match x {
-        Some(x) => x.serialize(s),
+        Some(x) => Into::<surrealdb::sql::Datetime>::into(*x).serialize(s),
         None => s.serialize_none(),
     }
 }

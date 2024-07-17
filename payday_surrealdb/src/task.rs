@@ -7,7 +7,7 @@ use payday_core::events::task::TaskResult;
 use payday_core::{
     date::{now, DateTime},
     events::{
-        handler::{Handler, MessageProcessorApi, TaskHandler},
+        handler::{MessageProcessorApi, TaskHandler},
         publisher::{Publisher, TaskPublisher},
         task::{RetryType, Task, TaskStatus, TaskType},
         Message, MessageError, MessageType, Result,
@@ -229,10 +229,11 @@ impl MessageProcessorApi for SurrealTaskProcessor {
         let batch_size = self.batch_size;
         let task_types = self.task_types.clone();
         let handlers = self.handlers.clone();
-        let interval = self.poll_interval.clone();
+        let interval = self.poll_interval;
 
         let handle = tokio::spawn(async move {
             loop {
+                let _ = cleanup_batch(db.clone(), &table, task_types.clone()).await?;
                 let tasks = query_batch(db.clone(), &table, batch_size, task_types.clone()).await?;
                 for task in tasks {
                     for handler in handlers.iter() {
@@ -257,7 +258,6 @@ impl MessageProcessorApi for SurrealTaskProcessor {
                 }
                 tokio::time::sleep(interval).await;
             }
-            Ok(())
         });
         Ok(handle)
     }
@@ -274,9 +274,10 @@ async fn query_batch(
         .query(query)
         .await
         .map_err(|e| MessageError::SubscribeError(e.to_string()))?;
-    Ok(response
+    let result = response
         .take(0)
-        .map_err(|e| MessageError::SubscribeError(e.to_string()))?)
+        .map_err(|e| MessageError::SubscribeError(e.to_string()))?;
+    Ok(result)
 }
 
 async fn cleanup_batch(
@@ -284,8 +285,9 @@ async fn cleanup_batch(
     table: &str,
     task_types: Option<Vec<String>>,
 ) -> Result<()> {
-    let response = db
-        .query(task_cleanup_query(table, task_types.clone()))
+    let max_execution = Duration::from_secs(1800);
+    let _ = db
+        .query(task_cleanup_query(table, task_types.clone(), max_execution))
         .await
         .map_err(|e| MessageError::SubscribeError(e.to_string()))?;
     Ok(())
@@ -310,18 +312,23 @@ fn task_query(table: &str, limit: usize, task_types: Option<Vec<String>>) -> Str
     )
 }
 
-fn task_cleanup_query(table: &str, task_types: Option<Vec<String>>) -> String {
+fn task_cleanup_query(
+    table: &str,
+    task_types: Option<Vec<String>>,
+    max_execution: Duration,
+) -> String {
     format!(
         "BEGIN TRANSACTION; \
-         let $failed = SELECT * FROM {}
-         WHERE processed = false 
-         AND status = 'Processing'
-         AND started_at + (retry_after OR $max_execution) < time::now()
-         {};
+         let $failed = SELECT * FROM {} \
+         WHERE processed = false \
+         AND status = 'Processing' \
+         AND started_at + (retry_after OR {}s) < time::now() \
+         {}; \
          UPDATE $failed SET status = 'Failed', processed = true; \
          COMMIT TRANSACTION; \
     ",
         table,
+        max_execution.as_secs(),
         task_type_query_fragment(task_types)
     )
 }
