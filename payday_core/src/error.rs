@@ -2,7 +2,7 @@ use bitcoin::address::ParseError;
 use bitcoin::amount::ParseAmountError;
 use bitcoin::network::ParseNetworkError;
 
-use crate::events::EventError;
+use crate::events::MessageError;
 
 #[derive(Debug)]
 pub enum PaydayError {
@@ -32,14 +32,17 @@ impl From<ParseAmountError> for PaydayError {
     }
 }
 
-impl From<EventError> for PaydayError {
-    fn from(value: EventError) -> Self {
+impl From<MessageError> for PaydayError {
+    fn from(value: MessageError) -> Self {
         match value {
-            EventError::PublishError(m) => {
+            MessageError::PublishError(m) => {
                 PaydayError::EventError(format!("unable to publish event: {}", m))
             }
-            EventError::SubscribeError(m) => {
+            MessageError::SubscribeError(m) => {
                 PaydayError::EventError(format!("unable to subscribe event stream: {}", m))
+            }
+            MessageError::ConfirmError(m) => {
+                PaydayError::EventError(format!("unable to confirm event processing: {}", m))
             }
         }
     }

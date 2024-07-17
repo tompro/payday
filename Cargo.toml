@@ -30,6 +30,7 @@ bitcoin = "0.32.2"
 serde = { version = "1.0.203", features = ["derive"] }
 serde_json = "1.0.118"
 tokio-stream = "0.1.15"
+chrono = "0.4"
 currencies = "0.4.1"
 cqrs-es = "0.4.11"
 tokio = { version = "1.38.0", features = ["full"] }

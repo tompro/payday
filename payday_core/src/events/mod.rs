@@ -1,40 +1,26 @@
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use std::fmt::Debug;
+
+use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 
+pub mod handler;
 pub mod publisher;
+pub mod task;
 
-pub type Result<T> = std::result::Result<T, EventError>;
+pub type Result<T> = std::result::Result<T, MessageError>;
 
 #[derive(Debug)]
-pub enum EventError {
+pub enum MessageError {
     PublishError(String),
     SubscribeError(String),
+    ConfirmError(String),
 }
 
 /// A unique name for this event type. Not an enum so application can define their own.
-pub type EventType = String;
+pub type MessageType = String;
 
-pub trait Event: DeserializeOwned + Serialize + Clone + Send + Sync {
-    fn event_type(&self) -> EventType;
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GenericEvent {
-    event_type: EventType,
-    pub payload: Value,
-}
-
-impl GenericEvent {
-    pub fn new(event_type: EventType, payload: Value) -> Self {
-        Self {
-            event_type,
-            payload,
-        }
-    }
-}
-
-impl Event for GenericEvent {
-    fn event_type(&self) -> EventType {
-        self.event_type.to_owned()
-    }
+/// A message is a type that can be published to a stream or queue.
+pub trait Message: DeserializeOwned + Serialize + Clone + Send + Sync + Debug {
+    fn message_type(&self) -> MessageType;
+    fn payload(&self) -> Value;
 }

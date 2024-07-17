@@ -7,12 +7,18 @@ use payday_btc::{
     on_chain_processor::{OnChainTransactionPrintHandler, OnChainTransactionProcessor},
 };
 use payday_core::{
-    events::{publisher::Publisher, GenericEvent},
+    events::{
+        handler::{MessageProcessorApi, PrintTaskHandler},
+        publisher::{Publisher, TaskPublisher},
+        task::{RetryType, Task},
+    },
     PaydayResult,
 };
 use payday_node_lnd::lnd::{Lnd, LndConfig, LndTransactionStream};
 use payday_surrealdb::{
-    block_height::BlockHeightStore, create_surreal_db, event_stream::EventStream,
+    block_height::BlockHeightStore,
+    create_surreal_db,
+    task::{SurrealTaskProcessor, SurrealTaskQueue},
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
@@ -53,19 +59,42 @@ async fn main() -> PaydayResult<()> {
         LndTransactionStream::new(lnd_config.clone(), Arc::new(Mutex::new(processor)), None);
     let handle = stream.process_events().await?;
 
-    let publisher = EventStream::new(db.clone(), "events");
-    let publish_handle = publisher.subscribe().await?;
+    //let publisher = EventStream::new(db.clone(), "events");
+    let publisher = SurrealTaskQueue::new(db.clone(), "tasks");
+    //let publish_handle = publisher.subscribe().await?;
     tokio::time::sleep(Duration::from_secs(2)).await;
+
+    let processor = SurrealTaskProcessor::new(
+        db.clone(),
+        "tasks",
+        vec![Arc::new(Mutex::new(PrintTaskHandler))],
+    );
+
+    let processor_handle = processor.process().await?;
+
+    let task_payload = Task::new(
+        "anewone".to_owned(),
+        TestPayload {
+            name: "anothe test".to_string(),
+            processed: true,
+            sequence: 1,
+        },
+    );
+
+    publisher.publish(task_payload).await?;
+
+    let retry_task = Task::new(
+        "a retry task".to_owned(),
+        TestPayload {
+            name: "retry task".to_string(),
+            processed: false,
+            sequence: 2,
+        },
+    );
+
+    publisher.publish(retry_task.clone()).await?;
     publisher
-        .publish(GenericEvent::new(
-            "test".to_string(),
-            serde_json::to_value(TestPayload {
-                name: "test".to_string(),
-                processed: false,
-                sequence: 0,
-            })
-            .unwrap(),
-        ))
+        .retry(retry_task, RetryType::Fixed(3, Duration::from_secs(5)))
         .await?;
 
     //let outputs = HashMap::from([
@@ -95,7 +124,7 @@ async fn main() -> PaydayResult<()> {
     //for event in pending {
     //    println!("Pending: {:?}", event);
     //}
-    let (_, _) = tokio::join!(handle, publish_handle);
+    let (_, _) = tokio::join!(handle, processor_handle);
     //handle.await.expect("could not subscribe to onchain stream");
     //bind.await.expect("done subscriber");
     println!("Done");

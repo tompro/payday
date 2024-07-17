@@ -1,11 +1,13 @@
 use async_trait::async_trait;
 use payday_core::{
-    events::{publisher::Publisher, EventError, GenericEvent, Result},
+    events::{publisher::Publisher, task::Task, Message, MessageError, Result},
     PaydayResult,
 };
 use surrealdb::{engine::any::Any, Notification, Surreal};
 use tokio::task::JoinHandle;
 use tokio_stream::StreamExt;
+
+use crate::task::SurrealTask;
 
 pub struct EventStream {
     db: Surreal<Any>,
@@ -33,21 +35,24 @@ impl EventStream {
     }
 }
 
-fn print_event(event: surrealdb::Result<Notification<GenericEvent>>) {
+fn print_event(event: surrealdb::Result<Notification<SurrealTask>>) {
     println!("Event: {:?}", event);
 }
 
 #[async_trait]
-impl Publisher<GenericEvent> for EventStream {
-    async fn publish(&self, event: GenericEvent) -> Result<()> {
-        let res: Vec<GenericEvent> = self
+impl<E: Message> Publisher<E> for EventStream {
+    async fn publish(&self, event: E) -> Result<()>
+    where
+        E: 'async_trait,
+    {
+        let res: Vec<E> = self
             .db
             .create(&self.event_table)
             .content(event)
             .await
-            .map_err(|e| EventError::PublishError(e.to_string()))?;
+            .map_err(|e| MessageError::PublishError(e.to_string()))?;
         if res.is_empty() {
-            Err(EventError::PublishError(
+            Err(MessageError::PublishError(
                 "event was not inserted".to_string(),
             ))
         } else {

@@ -12,3 +12,4 @@ currencies = { workspace = true }
 cqrs-es = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }
+chrono = { workspace = true }
