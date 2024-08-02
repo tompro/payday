@@ -1,2 +1,2 @@
 pub mod lnd;
-mod wrapper;
+pub mod wrapper;

@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use bitcoin::Network;
+use bitcoin::{Amount, Network};
 
 use payday_btc::{
     on_chain_api::{GetOnChainBalanceApi, OnChainInvoiceApi, OnChainStreamApi},
@@ -15,6 +15,7 @@ use payday_core::{
     PaydayResult,
 };
 use payday_node_lnd::lnd::{Lnd, LndConfig, LndTransactionStream};
+use payday_node_lnd::wrapper::LndRpcWrapper;
 use payday_surrealdb::{
     block_height::BlockHeightStore,
     create_surreal_db,
@@ -39,8 +40,18 @@ async fn main() -> PaydayResult<()> {
         macaroon_file: "/home/protom/dev/btc/payday_rs/admin.macaroon".to_string(),
         network: Network::Signet,
     };
-
     let lnd = Lnd::new(lnd_config.clone()).await?;
+    let wrapper = LndRpcWrapper::new(lnd_config.clone()).await?;
+
+    let invoice = wrapper
+        .create_invoice(
+            Amount::from_sat(300_000),
+            Some("test invoice".to_string()),
+            Some(31535000),
+        )
+        .await?;
+
+    println!("{:?}", invoice);
 
     let address = lnd.new_address().await?;
     println!("{:?}", address);

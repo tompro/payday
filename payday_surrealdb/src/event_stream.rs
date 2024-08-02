@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use payday_core::{
-    events::{publisher::Publisher, task::Task, Message, MessageError, Result},
+    events::{publisher::Publisher, Message, MessageError, Result},
     PaydayResult,
 };
 use surrealdb::{engine::any::Any, Notification, Surreal};

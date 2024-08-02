@@ -6,17 +6,17 @@
 //! operations needed for invoicing.
 use std::{collections::HashMap, sync::Arc};
 
-use bitcoin::{Address, Amount, Network};
+use bitcoin::{hex::DisplayHex, Address, Amount, Network};
 use fedimint_tonic_lnd::{
     lnrpc::{
         ChannelBalanceRequest, ChannelBalanceResponse, GetInfoRequest, GetTransactionsRequest,
-        SendCoinsRequest, SendManyRequest, Transaction, WalletBalanceRequest,
+        Invoice, SendCoinsRequest, SendManyRequest, Transaction, WalletBalanceRequest,
         WalletBalanceResponse,
     },
     Client,
 };
 use payday_btc::to_address;
-use payday_core::{PaydayError, PaydayResult, PaydayStream};
+use payday_core::{payment::invoice::LnInvoice, PaydayError, PaydayResult, PaydayStream};
 use tokio::sync::{Mutex, MutexGuard};
 use tokio_stream::StreamExt;
 
@@ -194,6 +194,32 @@ impl LndRpcWrapper {
             .sat_per_vbyte;
 
         Ok(Amount::from_sat(fee))
+    }
+
+    pub async fn create_invoice(
+        &self,
+        amount: Amount,
+        memo: Option<String>,
+        ttl: Option<i64>,
+    ) -> PaydayResult<LnInvoice> {
+        let mut lnd = self.client().await;
+        let invoice = lnd
+            .lightning()
+            .add_invoice(Invoice {
+                value: amount.to_sat() as i64,
+                memo: memo.unwrap_or("ln invoice".to_string()),
+                expiry: ttl.unwrap_or(3600i64),
+                ..Default::default()
+            })
+            .await
+            .map_err(|e| PaydayError::NodeApiError(e.to_string()))?
+            .into_inner();
+
+        Ok(LnInvoice {
+            invoice: invoice.payment_request,
+            r_hash: invoice.r_hash.as_hex().to_string(),
+            add_index: invoice.add_index,
+        })
     }
 
     /// Get a stream of onchain transactions relevant to the wallet. As LND RPC does not handle
