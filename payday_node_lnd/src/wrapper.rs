@@ -4,7 +4,7 @@
 //! handles connection and network checks, maps errors to project
 //! specific errors, and provides a convenient interface for the
 //! operations needed for invoicing.
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, f32::consts::E, sync::Arc};
 
 use bitcoin::{hex::DisplayHex, Address, Amount, Network};
 use fedimint_tonic_lnd::{
@@ -52,8 +52,7 @@ impl LndRpcWrapper {
             .network
             .to_string();
 
-        let network = Network::from_core_arg(network_info.as_str())?;
-        if config.network != network {
+        if config.network != network_from_str(&network_info)? {
             return Err(PaydayError::InvalidBitcoinNetwork(network_info));
         }
         Ok(Self {
@@ -256,4 +255,15 @@ impl LndRpcWrapper {
             .into_inner()
             .transactions)
     }
+}
+
+fn network_from_str(s: &str) -> PaydayResult<Network> {
+    let net = match s {
+        "mainnet" => Network::Bitcoin,
+        "testnet" => Network::Testnet,
+        "regtest" => Network::Regtest,
+        "signet" => Network::Signet,
+        _ => Err(PaydayError::InvalidBitcoinNetwork(s.to_string()))?,
+    };
+    Ok(net)
 }
