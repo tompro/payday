@@ -1,12 +1,9 @@
 use std::time::Duration;
 
-use async_trait::async_trait;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::task::JoinHandle;
 
-use crate::date::{date_after, now, DateTime};
-use crate::events::Result;
+use crate::date::{now, DateTime};
 
 use super::{Message, MessageType};
 
@@ -44,11 +41,7 @@ pub enum RetryType {
 
 impl RetryType {
     pub fn is_retry(&self) -> bool {
-        match self {
-            RetryType::Fixed(..) => true,
-            RetryType::Exponential(..) => true,
-            _ => false,
-        }
+        matches!(self, RetryType::Fixed(..) | RetryType::Exponential(..))
     }
     pub fn next_retry(&self) -> Option<DateTime> {
         match self {
