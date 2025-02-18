@@ -1,5 +1,5 @@
 use chrono::Utc;
-use payday_core::{PaydayError, PaydayResult};
+use payday_core::{Error, Result};
 use serde::{Serialize, Serializer};
 use surrealdb::{
     engine::any::{self, Any},
@@ -14,21 +14,21 @@ pub async fn create_surreal_db(
     path: &str,
     namespace: &str,
     database: &str,
-) -> PaydayResult<Surreal<Any>> {
+) -> Result<Surreal<Any>> {
     let db = any::connect(path)
         .await
-        .map_err(|e| PaydayError::DbError(e.to_string()))?;
+        .map_err(|e| Error::DbError(e.to_string()))?;
     db.use_ns(namespace)
         .use_db(database)
         .await
-        .map_err(|e| PaydayError::DbError(e.to_string()))?;
+        .map_err(|e| Error::DbError(e.to_string()))?;
     Ok(db)
 }
 
 pub fn serialize_chrono_as_sql_datetime<S>(
     x: &chrono::DateTime<Utc>,
     s: S,
-) -> Result<S::Ok, S::Error>
+) -> std::result::Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
@@ -38,7 +38,7 @@ where
 pub fn serialize_chrono_as_sql_datetime_option<S>(
     x: &Option<chrono::DateTime<Utc>>,
     s: S,
-) -> Result<S::Ok, S::Error>
+) -> std::result::Result<S::Ok, S::Error>
 where
     S: Serializer,
 {

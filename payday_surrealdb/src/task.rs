@@ -205,6 +205,7 @@ impl SurrealTaskProcessor {
         self.handlers.push(handler);
     }
 
+    #[allow(dead_code)]
     async fn query_batch(&self) -> Result<Vec<SurrealTask>> {
         let mut response = self
             .db
@@ -215,9 +216,9 @@ impl SurrealTaskProcessor {
             ))
             .await
             .map_err(|e| MessageError::SubscribeError(e.to_string()))?;
-        Ok(response
+        response
             .take(0)
-            .map_err(|e| MessageError::SubscribeError(e.to_string()))?)
+            .map_err(|e| MessageError::SubscribeError(e.to_string()))
     }
 }
 

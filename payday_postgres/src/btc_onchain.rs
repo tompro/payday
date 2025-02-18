@@ -1,19 +1,15 @@
-use async_trait::async_trait;
-use payday_btc::{
-    on_chain_aggregate::{BtcOnChainInvoice, OnChainInvoiceCommand},
-    on_chain_api::OnChainInvoiceApi,
-    on_chain_processor::OnChainTransactionEvent,
-};
-use payday_core::{
-    payment::{
-        amount::Amount,
-        currency::Currency,
-        invoice::{Invoice, InvoiceId, PaymentProcessorApi, PaymentType},
-    },
-    PaydayError, PaydayResult,
-};
-use postgres_es::PostgresCqrs;
-use serde_json::Value;
+// use async_trait::async_trait;
+// use payday_btc::on_chain_aggregate::{BtcOnChainInvoice, OnChainInvoiceCommand};
+// use payday_core::{
+//     payment::{
+//         amount::Amount,
+//         currency::Currency,
+//         invoice::{Invoice, InvoiceId, PaymentProcessorApi, PaymentType},
+//     },
+//     Error, Result,
+// };
+// use postgres_es::PostgresCqrs;
+// use serde_json::Value;
 
 //pub struct OnChainProcessor {
 //    name: String,
@@ -56,7 +52,7 @@ use serde_json::Value;
 //        invoice_id: InvoiceId,
 //        amount: Amount,
 //        _memo: Option<String>,
-//    ) -> PaydayResult<Invoice> {
+//    ) -> Result<Invoice> {
 //        let address = self.on_chain_api.new_address().await?;
 //        self.cqrs
 //            .execute(
@@ -78,7 +74,7 @@ use serde_json::Value;
 //        })
 //    }
 //
-//    async fn process_payment_events(&self) -> PaydayResult<()> {
+//    async fn process_payment_events(&self) -> Result<()> {
 //        let mut subscriber = self.tx_stream.subscribe_events()?;
 //        while let Some(event) = subscriber.recv().await {
 //            let (aggregate_id, command) = match event {

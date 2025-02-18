@@ -4,7 +4,7 @@
 //! handles connection and network checks, maps errors to project
 //! specific errors, and provides a convenient interface for the
 //! operations needed for invoicing.
-use std::{collections::HashMap, f32::consts::E, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use bitcoin::{hex::DisplayHex, Address, Amount, Network};
 use fedimint_tonic_lnd::{
@@ -16,7 +16,7 @@ use fedimint_tonic_lnd::{
     Client,
 };
 use payday_btc::to_address;
-use payday_core::{payment::invoice::LnInvoice, PaydayError, PaydayResult, PaydayStream};
+use payday_core::{payment::invoice::LnInvoice, Error, PaydayStream, Result};
 use tokio::sync::{Mutex, MutexGuard};
 use tokio_stream::StreamExt;
 
@@ -31,20 +31,20 @@ pub struct LndRpcWrapper {
 impl LndRpcWrapper {
     /// Create a new LND RPC wrapper. Creates an RPC connection and
     /// checks whether the RPC server is serving the expected network.
-    pub async fn new(config: LndConfig) -> PaydayResult<Self> {
+    pub async fn new(config: LndConfig) -> Result<Self> {
         let mut lnd: Client = fedimint_tonic_lnd::connect(
             config.address.to_string(),
             config.cert_path.to_string(),
             config.macaroon_file.to_string(),
         )
         .await
-        .map_err(|e| PaydayError::NodeConnectError(e.to_string()))?;
+        .map_err(|e| Error::NodeConnectError(e.to_string()))?;
 
         let network_info = lnd
             .lightning()
             .get_info(GetInfoRequest {})
             .await
-            .map_err(|e| PaydayError::NodeApiError(e.to_string()))?
+            .map_err(|e| Error::NodeApiError(e.to_string()))?
             .into_inner()
             .chains
             .first()
@@ -53,7 +53,7 @@ impl LndRpcWrapper {
             .to_string();
 
         if config.network != network_from_str(&network_info)? {
-            return Err(PaydayError::InvalidBitcoinNetwork(network_info));
+            return Err(Error::InvalidBitcoinNetwork(network_info));
         }
         Ok(Self {
             config,
@@ -71,30 +71,28 @@ impl LndRpcWrapper {
         self.client.lock().await
     }
 
-    pub async fn get_onchain_balance(&self) -> PaydayResult<WalletBalanceResponse> {
+    pub async fn get_onchain_balance(&self) -> Result<WalletBalanceResponse> {
         let mut lnd = self.client().await;
         Ok(lnd
             .lightning()
             .wallet_balance(WalletBalanceRequest {})
             .await
-            .map_err(|e| PaydayError::NodeApiError(e.to_string()))?
+            .map_err(|e| Error::NodeApiError(e.to_string()))?
             .into_inner())
     }
 
-    pub async fn get_channel_balance(&self) -> PaydayResult<ChannelBalanceResponse> {
+    pub async fn get_channel_balance(&self) -> Result<ChannelBalanceResponse> {
         let mut lnd = self.client().await;
         Ok(lnd
             .lightning()
             .channel_balance(ChannelBalanceRequest {})
             .await
-            .map_err(|e| PaydayError::NodeApiError(e.to_string()))?
+            .map_err(|e| Error::NodeApiError(e.to_string()))?
             .into_inner())
     }
 
     /// Get the current balances (onchain and lightning) of the wallet.
-    pub async fn get_balances(
-        &self,
-    ) -> PaydayResult<(WalletBalanceResponse, ChannelBalanceResponse)> {
+    pub async fn get_balances(&self) -> Result<(WalletBalanceResponse, ChannelBalanceResponse)> {
         let on_chain = self.get_onchain_balance().await?;
         let lightning = self.get_channel_balance().await?;
         Ok((on_chain, lightning))
@@ -102,7 +100,7 @@ impl LndRpcWrapper {
 
     /// Get a new onchain address for the wallet. Address is parsed and
     /// validated for the configure network.
-    pub async fn new_address(&self) -> PaydayResult<Address> {
+    pub async fn new_address(&self) -> Result<Address> {
         let addr = self
             .client()
             .await
@@ -111,7 +109,7 @@ impl LndRpcWrapper {
                 ..Default::default()
             })
             .await
-            .map_err(|e| PaydayError::NodeApiError(e.to_string()))?
+            .map_err(|e| Error::NodeApiError(e.to_string()))?
             .into_inner()
             .address;
         let address = to_address(&addr, self.config.network)?;
@@ -125,7 +123,7 @@ impl LndRpcWrapper {
         amount: Amount,
         address: &str,
         sats_per_vbyte: Amount,
-    ) -> PaydayResult<String> {
+    ) -> Result<String> {
         let checked_address = to_address(address, self.config.network)?;
         let txid = self
             .client()
@@ -138,7 +136,7 @@ impl LndRpcWrapper {
                 ..Default::default()
             })
             .await
-            .map_err(|e| PaydayError::NodeApiError(e.to_string()))?
+            .map_err(|e| Error::NodeApiError(e.to_string()))?
             .into_inner()
             .txid;
 
@@ -150,7 +148,7 @@ impl LndRpcWrapper {
         &self,
         outputs: HashMap<Address, i64>,
         sats_per_vbyte: Amount,
-    ) -> PaydayResult<String> {
+    ) -> Result<String> {
         let out = outputs
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_owned()))
@@ -165,7 +163,7 @@ impl LndRpcWrapper {
                 ..Default::default()
             })
             .await
-            .map_err(|e| PaydayError::NodeApiError(e.to_string()))?
+            .map_err(|e| Error::NodeApiError(e.to_string()))?
             .into_inner()
             .txid;
 
@@ -177,7 +175,7 @@ impl LndRpcWrapper {
         &self,
         target_conf: i32,
         outputs: HashMap<String, i64>,
-    ) -> PaydayResult<Amount> {
+    ) -> Result<Amount> {
         let fee = self
             .client()
             .await
@@ -188,7 +186,7 @@ impl LndRpcWrapper {
                 ..Default::default()
             })
             .await
-            .map_err(|e| PaydayError::NodeApiError(e.to_string()))?
+            .map_err(|e| Error::NodeApiError(e.to_string()))?
             .into_inner()
             .sat_per_vbyte;
 
@@ -200,7 +198,7 @@ impl LndRpcWrapper {
         amount: Amount,
         memo: Option<String>,
         ttl: Option<i64>,
-    ) -> PaydayResult<LnInvoice> {
+    ) -> Result<LnInvoice> {
         let mut lnd = self.client().await;
         let invoice = lnd
             .lightning()
@@ -211,7 +209,7 @@ impl LndRpcWrapper {
                 ..Default::default()
             })
             .await
-            .map_err(|e| PaydayError::NodeApiError(e.to_string()))?
+            .map_err(|e| Error::NodeApiError(e.to_string()))?
             .into_inner();
 
         Ok(LnInvoice {
@@ -223,13 +221,13 @@ impl LndRpcWrapper {
 
     /// Get a stream of onchain transactions relevant to the wallet. As LND RPC does not handle
     /// the request arguments, we do not provide any on this method to avoid confusion.
-    pub async fn subscribe_transactions(&self) -> PaydayResult<PaydayStream<Transaction>> {
+    pub async fn subscribe_transactions(&self) -> Result<PaydayStream<Transaction>> {
         let mut lnd = self.client().await;
         let stream = lnd
             .lightning()
             .subscribe_transactions(GetTransactionsRequest::default())
             .await
-            .map_err(|e| PaydayError::NodeApiError(e.to_string()))?
+            .map_err(|e| Error::NodeApiError(e.to_string()))?
             .into_inner()
             .filter(|tx| tx.is_ok())
             .map(|tx| tx.unwrap());
@@ -241,7 +239,7 @@ impl LndRpcWrapper {
         &self,
         start_height: i32,
         end_height: i32,
-    ) -> PaydayResult<Vec<Transaction>> {
+    ) -> Result<Vec<Transaction>> {
         let mut lnd = self.client().await;
         Ok(lnd
             .lightning()
@@ -251,19 +249,19 @@ impl LndRpcWrapper {
                 ..Default::default()
             })
             .await
-            .map_err(|e| PaydayError::NodeApiError(e.to_string()))?
+            .map_err(|e| Error::NodeApiError(e.to_string()))?
             .into_inner()
             .transactions)
     }
 }
 
-fn network_from_str(s: &str) -> PaydayResult<Network> {
+fn network_from_str(s: &str) -> Result<Network> {
     let net = match s {
         "mainnet" => Network::Bitcoin,
         "testnet" => Network::Testnet,
         "regtest" => Network::Regtest,
         "signet" => Network::Signet,
-        _ => Err(PaydayError::InvalidBitcoinNetwork(s.to_string()))?,
+        _ => Err(Error::InvalidBitcoinNetwork(s.to_string()))?,
     };
     Ok(net)
 }

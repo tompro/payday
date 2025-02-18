@@ -1,28 +1,10 @@
-use std::{sync::Arc, time::Duration};
-
 use bitcoin::{Amount, Network};
 
-use payday_btc::{
-    on_chain_api::{GetOnChainBalanceApi, OnChainInvoiceApi, OnChainStreamApi},
-    on_chain_processor::{OnChainTransactionPrintHandler, OnChainTransactionProcessor},
-};
-use payday_core::{
-    events::{
-        handler::{MessageProcessorApi, PrintTaskHandler},
-        publisher::{Publisher, TaskPublisher},
-        task::{RetryType, Task},
-    },
-    PaydayResult,
-};
-use payday_node_lnd::lnd::{Lnd, LndConfig, LndTransactionStream};
+use payday_core::api::on_chain_api::{GetOnChainBalanceApi, OnChainInvoiceApi};
+use payday_core::Result;
+use payday_node_lnd::lnd::{Lnd, LndConfig};
 use payday_node_lnd::wrapper::LndRpcWrapper;
-use payday_surrealdb::{
-    block_height::BlockHeightStore,
-    create_surreal_db,
-    task::{SurrealTaskProcessor, SurrealTaskQueue},
-};
 use serde::{Deserialize, Serialize};
-use tokio::sync::Mutex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TestPayload {
@@ -32,7 +14,7 @@ struct TestPayload {
 }
 
 #[tokio::main]
-async fn main() -> PaydayResult<()> {
+async fn main() -> Result<()> {
     let lnd_config = LndConfig {
         name: "payday".to_string(),
         address: "https://tbc-mutiny.u.voltageapp.io:10009".to_string(),

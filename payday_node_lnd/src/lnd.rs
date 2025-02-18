@@ -7,17 +7,15 @@ use fedimint_tonic_lnd::{
     lnrpc::{GetTransactionsRequest, Transaction},
     Client,
 };
-use payday_btc::{
-    on_chain_api::{
+use payday_btc::to_address;
+use payday_core::{
+    api::on_chain_api::{
         GetOnChainBalanceApi, OnChainBalance, OnChainInvoiceApi, OnChainPaymentApi,
-        OnChainPaymentResult, OnChainStreamApi, OnChainTransactionApi,
+        OnChainPaymentResult, OnChainStreamApi, OnChainTransaction, OnChainTransactionApi,
+        OnChainTransactionEvent, OnChainTransactionEventProcessorApi,
     },
-    on_chain_processor::{
-        OnChainTransaction, OnChainTransactionEvent, OnChainTransactionEventProcessorApi,
-    },
-    to_address,
+    Result,
 };
-use payday_core::PaydayResult;
 use tokio::{sync::Mutex, task::JoinHandle};
 use tokio_stream::StreamExt;
 
@@ -29,7 +27,7 @@ pub struct Lnd {
 }
 
 impl Lnd {
-    pub async fn new(config: LndConfig) -> PaydayResult<Self> {
+    pub async fn new(config: LndConfig) -> Result<Self> {
         let client = LndRpcWrapper::new(config.clone()).await?;
         Ok(Self { config, client })
     }
@@ -37,7 +35,7 @@ impl Lnd {
 
 #[async_trait]
 impl GetOnChainBalanceApi for Lnd {
-    async fn get_onchain_balance(&self) -> PaydayResult<OnChainBalance> {
+    async fn get_onchain_balance(&self) -> Result<OnChainBalance> {
         let res = self.client.get_onchain_balance().await?;
         Ok(OnChainBalance {
             total_balance: to_amount(res.total_balance),
@@ -49,14 +47,14 @@ impl GetOnChainBalanceApi for Lnd {
 
 #[async_trait]
 impl OnChainInvoiceApi for Lnd {
-    async fn new_address(&self) -> PaydayResult<Address> {
+    async fn new_address(&self) -> Result<Address> {
         self.client.new_address().await
     }
 }
 
 #[async_trait]
 impl OnChainPaymentApi for Lnd {
-    fn validate_address(&self, address: &str) -> PaydayResult<Address> {
+    fn validate_address(&self, address: &str) -> Result<Address> {
         to_address(address, self.config.network)
     }
 
@@ -64,7 +62,7 @@ impl OnChainPaymentApi for Lnd {
         &self,
         target_conf: i32,
         outputs: HashMap<String, Amount>,
-    ) -> PaydayResult<Amount> {
+    ) -> Result<Amount> {
         let out = outputs
             .iter()
             .map(|p| (p.0.to_owned(), p.1.to_sat() as i64))
@@ -78,7 +76,7 @@ impl OnChainPaymentApi for Lnd {
         amount: Amount,
         address: String,
         sats_per_vbyte: Amount,
-    ) -> PaydayResult<OnChainPaymentResult> {
+    ) -> Result<OnChainPaymentResult> {
         let tx_id = self
             .client
             .send_coins(amount, &address, sats_per_vbyte)
@@ -95,7 +93,7 @@ impl OnChainPaymentApi for Lnd {
         &self,
         outputs: HashMap<String, Amount>,
         sats_per_vbyte: Amount,
-    ) -> PaydayResult<OnChainPaymentResult> {
+    ) -> Result<OnChainPaymentResult> {
         let out = outputs
             .iter()
             .flat_map(|(k, v)| {
@@ -122,7 +120,7 @@ impl OnChainTransactionApi for Lnd {
         &self,
         start_height: i32,
         end_height: i32,
-    ) -> PaydayResult<Vec<OnChainTransactionEvent>> {
+    ) -> Result<Vec<OnChainTransactionEvent>> {
         let result = self
             .client
             .get_transactions(start_height, end_height)
@@ -154,10 +152,7 @@ fn to_amount(sats: i64) -> Amount {
 }
 
 /// Converts a Transaction to a list of OnChainTransactionEvents.
-fn to_on_chain_events(
-    tx: &Transaction,
-    chain: Network,
-) -> PaydayResult<Vec<OnChainTransactionEvent>> {
+fn to_on_chain_events(tx: &Transaction, chain: Network) -> Result<Vec<OnChainTransactionEvent>> {
     let received = tx.amount > 0;
     let confirmed = tx.num_confirmations > 0;
 
@@ -216,7 +211,7 @@ impl LndTransactionStream {
     }
 
     /// does fetch potential missing events from the current start_height
-    async fn start_subscription(&self) -> PaydayResult<Vec<OnChainTransactionEvent>> {
+    async fn start_subscription(&self) -> Result<Vec<OnChainTransactionEvent>> {
         let lnd = Lnd::new(self.config.clone()).await?;
         let start_height = match self.start_height {
             Some(start_height) => start_height,
@@ -230,7 +225,7 @@ impl LndTransactionStream {
 
 #[async_trait]
 impl OnChainStreamApi for LndTransactionStream {
-    async fn process_events(&self) -> PaydayResult<JoinHandle<()>> {
+    async fn process_events(&self) -> Result<JoinHandle<()>> {
         let start_events = self.start_subscription().await.ok().unwrap_or(vec![]);
         for event in start_events {
             self.handler.lock().await.process_event(event).await?;
@@ -286,7 +281,7 @@ impl OnChainStreamApi for LndTransactionStream {
 //}
 //
 //impl OnChainTransactionStreamSubscriber for LndOnChainPaymentEventStream {
-//    fn subscribe_events(&self) -> PaydayResult<Receiver<OnChainTransactionEvent>> {
+//    fn subscribe_events(&self) -> Result<Receiver<OnChainTransactionEvent>> {
 //        let config = self.config.clone();
 //        let (tx, rx) = tokio::sync::mpsc::channel::<OnChainTransactionEvent>(100);
 //

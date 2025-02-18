@@ -1,8 +1,5 @@
 use async_trait::async_trait;
-use payday_core::{
-    events::{publisher::Publisher, Message, MessageError, Result},
-    PaydayResult,
-};
+use payday_core::events::{publisher::Publisher, Message, MessageError, Result};
 use surrealdb::{engine::any::Any, Notification, Surreal};
 use tokio::task::JoinHandle;
 use tokio_stream::StreamExt;
@@ -22,7 +19,7 @@ impl EventStream {
         }
     }
 
-    pub async fn subscribe(&self) -> PaydayResult<JoinHandle<()>> {
+    pub async fn subscribe(&self) -> Result<JoinHandle<()>> {
         let table = self.event_table.to_string();
         let db = self.db.clone();
         let handle = tokio::spawn(async move {

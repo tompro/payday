@@ -1,11 +1,10 @@
 use async_trait::async_trait;
 use cqrs_es::{Aggregate, DomainEvent};
+use payday_core::api::on_chain_api::OnChainTransactionEvent;
 use payday_core::payment::amount::Amount;
 use payday_core::payment::currency::Currency;
-use payday_core::payment::invoice::{InvoiceError, InvoiceId};
+use payday_core::payment::invoice::{Error, InvoiceId};
 use serde::{Deserialize, Serialize};
-
-use crate::on_chain_processor::OnChainTransactionEvent;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BtcOnChainInvoice {
@@ -143,7 +142,7 @@ impl DomainEvent for OnChainInvoiceEvent {
 impl Aggregate for BtcOnChainInvoice {
     type Command = OnChainInvoiceCommand;
     type Event = OnChainInvoiceEvent;
-    type Error = InvoiceError;
+    type Error = Error;
     type Services = ();
 
     fn aggregate_type() -> String {
@@ -162,7 +161,7 @@ impl Aggregate for BtcOnChainInvoice {
                 address,
             } => {
                 if amount.currency != Currency::Btc {
-                    return Err(InvoiceError::InvalidCurrency(
+                    return Err(Error::InvalidCurrency(
                         amount.currency.to_string(),
                         Currency::Btc.to_string(),
                     ));

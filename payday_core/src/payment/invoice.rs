@@ -4,31 +4,31 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{payment::amount::Amount, PaydayResult};
+use crate::payment::amount::Amount;
 
 pub type InvoiceId = String;
 pub type PaymentType = String;
-pub type InvoiceResult<T> = Result<T, InvoiceError>;
+pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, Clone)]
-pub enum InvoiceError {
+pub enum Error {
     InvalidAmount(Amount),
     InvalidCurrency(String, String),
     ServiceError(String),
 }
 
-impl std::error::Error for InvoiceError {}
+impl std::error::Error for Error {}
 
-impl Display for InvoiceError {
+impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            InvoiceError::InvalidAmount(a) => write!(f, "Invoice invalid amount: {}", a),
-            InvoiceError::InvalidCurrency(required, received) => write!(
+            Error::InvalidAmount(a) => write!(f, "Invoice invalid amount: {}", a),
+            Error::InvalidCurrency(required, received) => write!(
                 f,
                 "Invoice invalid currency required: {} received: {}",
                 required, received
             ),
-            InvoiceError::ServiceError(err) => write!(f, "Invoice service error: {}", err),
+            Error::ServiceError(err) => write!(f, "Invoice service error: {}", err),
         }
     }
 }
@@ -56,10 +56,10 @@ pub trait PaymentProcessorApi: Send + Sync {
         invoice_id: InvoiceId,
         amount: Amount,
         memo: Option<String>,
-    ) -> PaydayResult<Invoice>;
+    ) -> crate::Result<Invoice>;
 
     /// Processes payment events for this system.
-    async fn process_payment_events(&self) -> PaydayResult<()>;
+    async fn process_payment_events(&self) -> crate::Result<()>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
