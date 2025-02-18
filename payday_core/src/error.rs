@@ -5,9 +5,11 @@ use bitcoin::network::ParseNetworkError;
 use crate::events::MessageError;
 
 #[derive(Debug)]
-pub enum PaydayError {
+pub enum Error {
     NodeConnectError(String),
     NodeApiError(String),
+    LightningPaymentFailed(String),
+    PublicKey(String),
     DbError(String),
     InvalidBitcoinAddress(String),
     InvalidBitcoinNetwork(String),
@@ -15,34 +17,40 @@ pub enum PaydayError {
     EventError(String),
 }
 
-impl From<ParseNetworkError> for PaydayError {
+impl From<ParseNetworkError> for Error {
     fn from(value: ParseNetworkError) -> Self {
-        PaydayError::InvalidBitcoinNetwork(value.to_string())
+        Error::InvalidBitcoinNetwork(value.to_string())
     }
 }
-impl From<ParseError> for PaydayError {
+impl From<ParseError> for Error {
     fn from(value: ParseError) -> Self {
-        PaydayError::InvalidBitcoinAddress(value.to_string())
+        Error::InvalidBitcoinAddress(value.to_string())
     }
 }
 
-impl From<ParseAmountError> for PaydayError {
+impl From<ParseAmountError> for Error {
     fn from(value: ParseAmountError) -> Self {
-        PaydayError::InvalidBitcoinAmount(value.to_string())
+        Error::InvalidBitcoinAmount(value.to_string())
     }
 }
 
-impl From<MessageError> for PaydayError {
+impl From<bitcoin::key::ParsePublicKeyError> for Error {
+    fn from(value: bitcoin::key::ParsePublicKeyError) -> Self {
+        Error::PublicKey(value.to_string())
+    }
+}
+
+impl From<MessageError> for Error {
     fn from(value: MessageError) -> Self {
         match value {
             MessageError::PublishError(m) => {
-                PaydayError::EventError(format!("unable to publish event: {}", m))
+                Error::EventError(format!("unable to publish event: {}", m))
             }
             MessageError::SubscribeError(m) => {
-                PaydayError::EventError(format!("unable to subscribe event stream: {}", m))
+                Error::EventError(format!("unable to subscribe event stream: {}", m))
             }
             MessageError::ConfirmError(m) => {
-                PaydayError::EventError(format!("unable to confirm event processing: {}", m))
+                Error::EventError(format!("unable to confirm event processing: {}", m))
             }
         }
     }

@@ -4,19 +4,20 @@
 //! handles connection and network checks, maps errors to project
 //! specific errors, and provides a convenient interface for the
 //! operations needed for invoicing.
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
-use bitcoin::{hex::DisplayHex, Address, Amount, Network};
+use bitcoin::{hex::DisplayHex, Address, Amount, Network, PublicKey};
 use fedimint_tonic_lnd::{
     lnrpc::{
-        ChannelBalanceRequest, ChannelBalanceResponse, GetInfoRequest, GetTransactionsRequest,
-        Invoice, SendCoinsRequest, SendManyRequest, Transaction, WalletBalanceRequest,
-        WalletBalanceResponse,
+        payment::PaymentStatus, ChannelBalanceRequest, ChannelBalanceResponse, GetInfoRequest,
+        GetTransactionsRequest, Invoice, SendCoinsRequest, SendManyRequest, Transaction,
+        WalletBalanceRequest, WalletBalanceResponse,
     },
     Client,
 };
+use lightning_invoice::Bolt11Invoice;
 use payday_btc::to_address;
-use payday_core::{payment::invoice::LnInvoice, PaydayError, PaydayResult, PaydayStream};
+use payday_core::{api::lightining_api::LnInvoice, Error, PaydayStream, Result};
 use tokio::sync::{Mutex, MutexGuard};
 use tokio_stream::StreamExt;
 
@@ -31,20 +32,20 @@ pub struct LndRpcWrapper {
 impl LndRpcWrapper {
     /// Create a new LND RPC wrapper. Creates an RPC connection and
     /// checks whether the RPC server is serving the expected network.
-    pub async fn new(config: LndConfig) -> PaydayResult<Self> {
+    pub async fn new(config: LndConfig) -> Result<Self> {
         let mut lnd: Client = fedimint_tonic_lnd::connect(
             config.address.to_string(),
             config.cert_path.to_string(),
             config.macaroon_file.to_string(),
         )
         .await
-        .map_err(|e| PaydayError::NodeConnectError(e.to_string()))?;
+        .map_err(|e| Error::NodeConnectError(e.to_string()))?;
 
         let network_info = lnd
             .lightning()
             .get_info(GetInfoRequest {})
             .await
-            .map_err(|e| PaydayError::NodeApiError(e.to_string()))?
+            .map_err(|e| Error::NodeApiError(e.to_string()))?
             .into_inner()
             .chains
             .first()
@@ -52,9 +53,8 @@ impl LndRpcWrapper {
             .network
             .to_string();
 
-        let network = Network::from_core_arg(network_info.as_str())?;
-        if config.network != network {
-            return Err(PaydayError::InvalidBitcoinNetwork(network_info));
+        if config.network != network_from_str(&network_info)? {
+            return Err(Error::InvalidBitcoinNetwork(network_info));
         }
         Ok(Self {
             config,
@@ -65,37 +65,35 @@ impl LndRpcWrapper {
     /// Get the unique name of the LND server. Names are used to
     /// identify the server in logs and associated addresses and invoices.
     pub fn get_name(&self) -> String {
-        self.config.name.to_string()
+        self.config.node_id.to_string()
     }
 
     async fn client(&self) -> MutexGuard<Client> {
         self.client.lock().await
     }
 
-    pub async fn get_onchain_balance(&self) -> PaydayResult<WalletBalanceResponse> {
+    pub async fn get_onchain_balance(&self) -> Result<WalletBalanceResponse> {
         let mut lnd = self.client().await;
         Ok(lnd
             .lightning()
             .wallet_balance(WalletBalanceRequest {})
             .await
-            .map_err(|e| PaydayError::NodeApiError(e.to_string()))?
+            .map_err(|e| Error::NodeApiError(e.to_string()))?
             .into_inner())
     }
 
-    pub async fn get_channel_balance(&self) -> PaydayResult<ChannelBalanceResponse> {
+    pub async fn get_channel_balance(&self) -> Result<ChannelBalanceResponse> {
         let mut lnd = self.client().await;
         Ok(lnd
             .lightning()
             .channel_balance(ChannelBalanceRequest {})
             .await
-            .map_err(|e| PaydayError::NodeApiError(e.to_string()))?
+            .map_err(|e| Error::NodeApiError(e.to_string()))?
             .into_inner())
     }
 
     /// Get the current balances (onchain and lightning) of the wallet.
-    pub async fn get_balances(
-        &self,
-    ) -> PaydayResult<(WalletBalanceResponse, ChannelBalanceResponse)> {
+    pub async fn get_balances(&self) -> Result<(WalletBalanceResponse, ChannelBalanceResponse)> {
         let on_chain = self.get_onchain_balance().await?;
         let lightning = self.get_channel_balance().await?;
         Ok((on_chain, lightning))
@@ -103,7 +101,7 @@ impl LndRpcWrapper {
 
     /// Get a new onchain address for the wallet. Address is parsed and
     /// validated for the configure network.
-    pub async fn new_address(&self) -> PaydayResult<Address> {
+    pub async fn new_address(&self) -> Result<Address> {
         let addr = self
             .client()
             .await
@@ -112,7 +110,7 @@ impl LndRpcWrapper {
                 ..Default::default()
             })
             .await
-            .map_err(|e| PaydayError::NodeApiError(e.to_string()))?
+            .map_err(|e| Error::NodeApiError(e.to_string()))?
             .into_inner()
             .address;
         let address = to_address(&addr, self.config.network)?;
@@ -126,7 +124,7 @@ impl LndRpcWrapper {
         amount: Amount,
         address: &str,
         sats_per_vbyte: Amount,
-    ) -> PaydayResult<String> {
+    ) -> Result<String> {
         let checked_address = to_address(address, self.config.network)?;
         let txid = self
             .client()
@@ -139,7 +137,7 @@ impl LndRpcWrapper {
                 ..Default::default()
             })
             .await
-            .map_err(|e| PaydayError::NodeApiError(e.to_string()))?
+            .map_err(|e| Error::NodeApiError(e.to_string()))?
             .into_inner()
             .txid;
 
@@ -151,7 +149,7 @@ impl LndRpcWrapper {
         &self,
         outputs: HashMap<Address, i64>,
         sats_per_vbyte: Amount,
-    ) -> PaydayResult<String> {
+    ) -> Result<String> {
         let out = outputs
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_owned()))
@@ -166,7 +164,7 @@ impl LndRpcWrapper {
                 ..Default::default()
             })
             .await
-            .map_err(|e| PaydayError::NodeApiError(e.to_string()))?
+            .map_err(|e| Error::NodeApiError(e.to_string()))?
             .into_inner()
             .txid;
 
@@ -178,7 +176,7 @@ impl LndRpcWrapper {
         &self,
         target_conf: i32,
         outputs: HashMap<String, i64>,
-    ) -> PaydayResult<Amount> {
+    ) -> Result<Amount> {
         let fee = self
             .client()
             .await
@@ -189,19 +187,20 @@ impl LndRpcWrapper {
                 ..Default::default()
             })
             .await
-            .map_err(|e| PaydayError::NodeApiError(e.to_string()))?
+            .map_err(|e| Error::NodeApiError(e.to_string()))?
             .into_inner()
             .sat_per_vbyte;
 
         Ok(Amount::from_sat(fee))
     }
 
+    /// Creates a lightning invoice.
     pub async fn create_invoice(
         &self,
         amount: Amount,
         memo: Option<String>,
         ttl: Option<i64>,
-    ) -> PaydayResult<LnInvoice> {
+    ) -> Result<LnInvoice> {
         let mut lnd = self.client().await;
         let invoice = lnd
             .lightning()
@@ -212,7 +211,7 @@ impl LndRpcWrapper {
                 ..Default::default()
             })
             .await
-            .map_err(|e| PaydayError::NodeApiError(e.to_string()))?
+            .map_err(|e| Error::NodeApiError(e.to_string()))?
             .into_inner();
 
         Ok(LnInvoice {
@@ -222,15 +221,90 @@ impl LndRpcWrapper {
         })
     }
 
+    /// Pay a given bolt11 invoice. The fee limit is optional and defaults to 0 (no limit) the
+    /// optional timeout defaults to 60 seconds.
+    pub async fn send_lightning_payment(
+        &self,
+        request: fedimint_tonic_lnd::routerrpc::SendPaymentRequest,
+    ) -> Result<fedimint_tonic_lnd::lnrpc::Payment> {
+        let mut lnd = self.client().await;
+        let result = lnd
+            .router()
+            .send_payment_v2(request)
+            .await
+            .map_err(|e| Error::NodeApiError(e.to_string()))?;
+
+        // subscribe until the first non-inflight payment is received
+        match result
+            .into_inner()
+            .filter_map(|r| match r.ok() {
+                Some(p) if p.status() != PaymentStatus::InFlight => Some(p),
+                _ => None,
+            })
+            .next()
+            .await
+        {
+            Some(p) if p.status() == PaymentStatus::Succeeded => Ok(p),
+            Some(p) => Err(Error::LightningPaymentFailed(format!(
+                "Lightning payment failed: Status: {}, Reason:{}",
+                p.status().as_str_name(),
+                p.failure_reason().as_str_name()
+            ))),
+            _ => Err(Error::LightningPaymentFailed(
+                "Lightning payment failed without response".to_string(),
+            )),
+        }
+    }
+
+    /// Pay a given bolt11 invoice. The fee limit is optional and defaults to 0 (no limit) the
+    /// optional timeout defaults to 60 seconds.
+    pub async fn pay_invoice(
+        &self,
+        invoice: Bolt11Invoice,
+        fee_limit_sat: Option<i64>,
+        timeout: Option<Duration>,
+    ) -> Result<fedimint_tonic_lnd::lnrpc::Payment> {
+        let timeout_seconds = timeout.map(|t| t.as_secs() as i32).unwrap_or(60);
+        let result = self
+            .send_lightning_payment(fedimint_tonic_lnd::routerrpc::SendPaymentRequest {
+                payment_request: invoice.to_string(),
+                timeout_seconds,
+                fee_limit_sat: fee_limit_sat.unwrap_or(0),
+                no_inflight_updates: true,
+                ..Default::default()
+            })
+            .await?;
+        Ok(result)
+    }
+
+    /// Pay a specified amount to a node id. The optional timeout defaults to 60 seconds.
+    pub async fn pay_to_node_id(
+        &self,
+        node_id: PublicKey,
+        amount: Amount,
+        timeout: Option<Duration>,
+    ) -> Result<fedimint_tonic_lnd::lnrpc::Payment> {
+        let timeout_seconds = timeout.map(|t| t.as_secs() as i32).unwrap_or(60);
+        let result = self
+            .send_lightning_payment(fedimint_tonic_lnd::routerrpc::SendPaymentRequest {
+                dest: node_id.to_bytes(),
+                amt: amount.to_sat() as i64,
+                timeout_seconds,
+                ..Default::default()
+            })
+            .await?;
+        Ok(result)
+    }
+
     /// Get a stream of onchain transactions relevant to the wallet. As LND RPC does not handle
     /// the request arguments, we do not provide any on this method to avoid confusion.
-    pub async fn subscribe_transactions(&self) -> PaydayResult<PaydayStream<Transaction>> {
+    pub async fn subscribe_transactions(&self) -> Result<PaydayStream<Transaction>> {
         let mut lnd = self.client().await;
         let stream = lnd
             .lightning()
             .subscribe_transactions(GetTransactionsRequest::default())
             .await
-            .map_err(|e| PaydayError::NodeApiError(e.to_string()))?
+            .map_err(|e| Error::NodeApiError(e.to_string()))?
             .into_inner()
             .filter(|tx| tx.is_ok())
             .map(|tx| tx.unwrap());
@@ -242,7 +316,7 @@ impl LndRpcWrapper {
         &self,
         start_height: i32,
         end_height: i32,
-    ) -> PaydayResult<Vec<Transaction>> {
+    ) -> Result<Vec<Transaction>> {
         let mut lnd = self.client().await;
         Ok(lnd
             .lightning()
@@ -252,8 +326,19 @@ impl LndRpcWrapper {
                 ..Default::default()
             })
             .await
-            .map_err(|e| PaydayError::NodeApiError(e.to_string()))?
+            .map_err(|e| Error::NodeApiError(e.to_string()))?
             .into_inner()
             .transactions)
     }
+}
+
+fn network_from_str(s: &str) -> Result<Network> {
+    let net = match s {
+        "mainnet" => Network::Bitcoin,
+        "testnet" => Network::Testnet,
+        "regtest" => Network::Regtest,
+        "signet" => Network::Signet,
+        _ => Err(Error::InvalidBitcoinNetwork(s.to_string()))?,
+    };
+    Ok(net)
 }

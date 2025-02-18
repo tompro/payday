@@ -1,35 +1,42 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 use async_trait::async_trait;
-use bitcoin::{Address, Amount, Network};
+use bitcoin::{Address, Network};
 
 use fedimint_tonic_lnd::{
     lnrpc::{GetTransactionsRequest, Transaction},
     Client,
 };
-use payday_btc::{
-    on_chain_api::{
-        GetOnChainBalanceApi, OnChainBalance, OnChainInvoiceApi, OnChainPaymentApi,
-        OnChainPaymentResult, OnChainStreamApi, OnChainTransactionApi,
+use lightning_invoice::Bolt11Invoice;
+use payday_btc::to_address;
+use payday_core::{
+    api::{
+        lightining_api::{
+            ChannelBalance, GetLightningBalanceApi, LightningInvoiceApi, LightningPaymentApi,
+            LnInvoice, NodeBalance,
+        },
+        on_chain_api::{
+            GetOnChainBalanceApi, OnChainBalance, OnChainInvoiceApi, OnChainPaymentApi,
+            OnChainPaymentResult, OnChainTransaction, OnChainTransactionApi,
+            OnChainTransactionEvent, OnChainTransactionStreamApi,
+        },
     },
-    on_chain_processor::{
-        OnChainTransaction, OnChainTransactionEvent, OnChainTransactionEventProcessorApi,
-    },
-    to_address,
+    payment::amount::Amount,
+    Result,
 };
-use payday_core::PaydayResult;
-use tokio::{sync::Mutex, task::JoinHandle};
+use tokio::{sync::mpsc::Sender, task::JoinHandle};
 use tokio_stream::StreamExt;
 
 use crate::wrapper::LndRpcWrapper;
 
+#[derive(Clone)]
 pub struct Lnd {
     config: LndConfig,
     client: LndRpcWrapper,
 }
 
 impl Lnd {
-    pub async fn new(config: LndConfig) -> PaydayResult<Self> {
+    pub async fn new(config: LndConfig) -> Result<Self> {
         let client = LndRpcWrapper::new(config.clone()).await?;
         Ok(Self { config, client })
     }
@@ -37,7 +44,7 @@ impl Lnd {
 
 #[async_trait]
 impl GetOnChainBalanceApi for Lnd {
-    async fn get_onchain_balance(&self) -> PaydayResult<OnChainBalance> {
+    async fn get_onchain_balance(&self) -> Result<OnChainBalance> {
         let res = self.client.get_onchain_balance().await?;
         Ok(OnChainBalance {
             total_balance: to_amount(res.total_balance),
@@ -48,23 +55,63 @@ impl GetOnChainBalanceApi for Lnd {
 }
 
 #[async_trait]
+impl GetLightningBalanceApi for Lnd {
+    async fn get_channel_balance(&self) -> Result<ChannelBalance> {
+        let res = self.client.get_channel_balance().await?;
+
+        Ok(ChannelBalance {
+            local_balance: res
+                .local_balance
+                .map(|a| Amount::sats(a.sat))
+                .get_or_insert(Amount::sats(0))
+                .to_owned(),
+            remote_balance: res
+                .remote_balance
+                .map(|a| Amount::sats(a.sat))
+                .get_or_insert(Amount::sats(0))
+                .to_owned(),
+        })
+    }
+
+    async fn get_balances(&self) -> Result<NodeBalance> {
+        let onchain = self.get_onchain_balance().await?;
+        let channel = self.get_channel_balance().await?;
+        Ok(NodeBalance { onchain, channel })
+    }
+}
+
+#[async_trait]
 impl OnChainInvoiceApi for Lnd {
-    async fn new_address(&self) -> PaydayResult<Address> {
+    async fn new_address(&self) -> Result<Address> {
         self.client.new_address().await
     }
 }
 
 #[async_trait]
+impl LightningInvoiceApi for Lnd {
+    async fn create_ln_invoice(
+        &self,
+        amount: Amount,
+        memo: Option<String>,
+        ttl: Option<i64>,
+    ) -> Result<LnInvoice> {
+        let amount = bitcoin::Amount::from_sat(amount.amount);
+        let invoice = self.client.create_invoice(amount, memo, ttl).await?;
+        Ok(invoice)
+    }
+}
+
+#[async_trait]
 impl OnChainPaymentApi for Lnd {
-    fn validate_address(&self, address: &str) -> PaydayResult<Address> {
+    fn validate_address(&self, address: &str) -> Result<Address> {
         to_address(address, self.config.network)
     }
 
     async fn estimate_fee(
         &self,
         target_conf: i32,
-        outputs: HashMap<String, Amount>,
-    ) -> PaydayResult<Amount> {
+        outputs: HashMap<String, bitcoin::Amount>,
+    ) -> Result<bitcoin::Amount> {
         let out = outputs
             .iter()
             .map(|p| (p.0.to_owned(), p.1.to_sat() as i64))
@@ -75,10 +122,10 @@ impl OnChainPaymentApi for Lnd {
 
     async fn send(
         &self,
-        amount: Amount,
+        amount: bitcoin::Amount,
         address: String,
-        sats_per_vbyte: Amount,
-    ) -> PaydayResult<OnChainPaymentResult> {
+        sats_per_vbyte: bitcoin::Amount,
+    ) -> Result<OnChainPaymentResult> {
         let tx_id = self
             .client
             .send_coins(amount, &address, sats_per_vbyte)
@@ -93,9 +140,9 @@ impl OnChainPaymentApi for Lnd {
 
     async fn batch_send(
         &self,
-        outputs: HashMap<String, Amount>,
-        sats_per_vbyte: Amount,
-    ) -> PaydayResult<OnChainPaymentResult> {
+        outputs: HashMap<String, bitcoin::Amount>,
+        sats_per_vbyte: bitcoin::Amount,
+    ) -> Result<OnChainPaymentResult> {
         let out = outputs
             .iter()
             .flat_map(|(k, v)| {
@@ -117,18 +164,34 @@ impl OnChainPaymentApi for Lnd {
 }
 
 #[async_trait]
+impl LightningPaymentApi for Lnd {
+    async fn pay_to_node_pub_key(&self, pub_key: String, amount: Amount) -> Result<()> {
+        let amt = bitcoin::Amount::from_sat(amount.amount);
+        self.client
+            .pay_to_node_id(pub_key.parse()?, amt, None)
+            .await?;
+        Ok(())
+    }
+
+    async fn pay_invoice(&self, invoice: Bolt11Invoice) -> Result<()> {
+        self.client.pay_invoice(invoice, None, None).await?;
+        Ok(())
+    }
+}
+
+#[async_trait]
 impl OnChainTransactionApi for Lnd {
     async fn get_onchain_transactions(
         &self,
         start_height: i32,
         end_height: i32,
-    ) -> PaydayResult<Vec<OnChainTransactionEvent>> {
+    ) -> Result<Vec<OnChainTransactionEvent>> {
         let result = self
             .client
             .get_transactions(start_height, end_height)
             .await?
             .iter()
-            .flat_map(|tx| to_on_chain_events(tx, self.config.network))
+            .flat_map(|tx| to_on_chain_events(tx, self.config.network, &self.config.node_id))
             .flatten()
             .collect();
         Ok(result)
@@ -137,7 +200,7 @@ impl OnChainTransactionApi for Lnd {
 
 #[derive(Debug, Clone)]
 pub struct LndConfig {
-    pub name: String,
+    pub node_id: String,
     pub address: String,
     pub cert_path: String,
     pub macaroon_file: String,
@@ -145,11 +208,11 @@ pub struct LndConfig {
 }
 
 /// Converts a satoshi amount to an Amount
-fn to_amount(sats: i64) -> Amount {
+fn to_amount(sats: i64) -> bitcoin::Amount {
     if sats < 0 {
-        Amount::ZERO
+        bitcoin::Amount::ZERO
     } else {
-        Amount::from_sat(sats.unsigned_abs())
+        bitcoin::Amount::from_sat(sats.unsigned_abs())
     }
 }
 
@@ -157,7 +220,8 @@ fn to_amount(sats: i64) -> Amount {
 fn to_on_chain_events(
     tx: &Transaction,
     chain: Network,
-) -> PaydayResult<Vec<OnChainTransactionEvent>> {
+    node_id: &str,
+) -> Result<Vec<OnChainTransactionEvent>> {
     let received = tx.amount > 0;
     let confirmed = tx.num_confirmations > 0;
 
@@ -177,8 +241,9 @@ fn to_on_chain_events(
                 let payload = OnChainTransaction {
                     tx_id: tx.tx_hash.to_owned(),
                     block_height: tx.block_height,
+                    node_id: node_id.to_owned(),
                     confirmations: tx.num_confirmations,
-                    amount: Amount::from_sat(tx.amount.unsigned_abs()),
+                    amount: bitcoin::Amount::from_sat(tx.amount.unsigned_abs()),
                     address,
                 };
 
@@ -196,49 +261,48 @@ fn to_on_chain_events(
     Ok(res)
 }
 
-pub struct LndTransactionStream {
+pub struct LndOnChainPaymentEventStream {
     config: LndConfig,
-    handler: Arc<Mutex<dyn OnChainTransactionEventProcessorApi>>,
-    start_height: Option<i32>,
 }
 
-impl LndTransactionStream {
-    pub fn new(
-        config: LndConfig,
-        handler: Arc<Mutex<dyn OnChainTransactionEventProcessorApi>>,
-        start_height: Option<i32>,
-    ) -> Self {
-        Self {
-            config,
-            handler,
-            start_height,
-        }
+impl LndOnChainPaymentEventStream {
+    pub fn new(config: LndConfig) -> Self {
+        Self { config }
     }
 
     /// does fetch potential missing events from the current start_height
-    async fn start_subscription(&self) -> PaydayResult<Vec<OnChainTransactionEvent>> {
+    async fn start_subscription(&self, start_height: i32) -> Result<Vec<OnChainTransactionEvent>> {
         let lnd = Lnd::new(self.config.clone()).await?;
-        let start_height = match self.start_height {
-            Some(start_height) => start_height,
-            None => self.handler.lock().await.get_block_height().await?,
-        };
-
         let events = lnd.get_onchain_transactions(start_height, -1).await?;
         Ok(events)
     }
 }
 
 #[async_trait]
-impl OnChainStreamApi for LndTransactionStream {
-    async fn process_events(&self) -> PaydayResult<JoinHandle<()>> {
-        let start_events = self.start_subscription().await.ok().unwrap_or(vec![]);
-        for event in start_events {
-            self.handler.lock().await.process_event(event).await?;
-        }
-        let service = self.handler.clone();
+impl OnChainTransactionStreamApi for LndOnChainPaymentEventStream {
+    async fn subscribe_on_chain_transactions(
+        &self,
+        sender: Sender<OnChainTransactionEvent>,
+        start_height: Option<i32>,
+    ) -> Result<JoinHandle<()>> {
         let config = self.config.clone();
+        let start_events = self
+            .start_subscription(start_height.unwrap_or_default())
+            .await
+            .ok()
+            .unwrap_or(vec![]);
 
+        // catch up to from start height to now
+        for event in start_events {
+            if let Err(e) = sender.send(event).await {
+                println!(
+                    "Failed to send historic on chain transaction event: {:?}",
+                    e
+                );
+            }
+        }
         let handle = tokio::spawn(async move {
+            let sender = sender.clone();
             let mut lnd: Client = fedimint_tonic_lnd::connect(
                 config.address.to_string(),
                 config.cert_path.to_string(),
@@ -257,67 +321,15 @@ impl OnChainStreamApi for LndTransactionStream {
                 .map(|tx| tx.unwrap());
 
             while let Some(event) = stream.next().await {
-                let events = to_on_chain_events(&event, config.network)
-                    .expect("Failed to parse LND on-chain transaction");
-
-                for event in events {
-                    service
-                        .lock()
-                        .await
-                        .process_event(event)
-                        .await
-                        .expect("Failed to process LND on chain transaction event");
+                if let Ok(events) = to_on_chain_events(&event, config.network, &config.node_id) {
+                    for event in events {
+                        if let Err(e) = sender.send(event).await {
+                            println!("Failed to send on chain transaction event: {:?}", e);
+                        }
+                    }
                 }
             }
         });
-
         Ok(handle)
     }
 }
-
-//pub struct LndOnChainPaymentEventStream {
-//    config: LndConfig,
-//}
-//
-//impl LndOnChainPaymentEventStream {
-//    pub fn new(config: LndConfig) -> Self {
-//        Self { config }
-//    }
-//}
-//
-//impl OnChainTransactionStreamSubscriber for LndOnChainPaymentEventStream {
-//    fn subscribe_events(&self) -> PaydayResult<Receiver<OnChainTransactionEvent>> {
-//        let config = self.config.clone();
-//        let (tx, rx) = tokio::sync::mpsc::channel::<OnChainTransactionEvent>(100);
-//
-//        tokio::spawn(async move {
-//            let sender = tx.clone();
-//            let mut lnd: Client = fedimint_tonic_lnd::connect(
-//                config.address.to_string(),
-//                config.cert_path.to_string(),
-//                config.macaroon_file.to_string(),
-//            )
-//            .await
-//            .expect("Failed to connect to LND on-chain transaction stream");
-//
-//            let mut stream = lnd
-//                .lightning()
-//                .subscribe_transactions(GetTransactionsRequest::default())
-//                .await
-//                .expect("Failed to subscribe to LND on-chain transaction events")
-//                .into_inner()
-//                .filter(|tx| tx.is_ok())
-//                .map(|tx| tx.unwrap());
-//
-//            while let Some(event) = stream.next().await {
-//                let events = to_on_chain_events(&event, config.network)
-//                    .expect("Failed to parse LND on-chain transaction");
-//
-//                for event in events {
-//                    sender.send(event).await.expect("stream closed");
-//                }
-//            }
-//        });
-//        Ok(rx)
-//    }
-//}

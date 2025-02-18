@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 
 use super::{
-    task::{RetryType, Task, TaskResult},
+    task::{RetryType, Task},
     Message, Result,
 };
 

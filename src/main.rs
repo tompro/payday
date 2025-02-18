@@ -1,28 +1,10 @@
-use std::{sync::Arc, time::Duration};
+use bitcoin::Network;
 
-use bitcoin::{Amount, Network};
-
-use payday_btc::{
-    on_chain_api::{GetOnChainBalanceApi, OnChainInvoiceApi, OnChainStreamApi},
-    on_chain_processor::{OnChainTransactionPrintHandler, OnChainTransactionProcessor},
-};
-use payday_core::{
-    events::{
-        handler::{MessageProcessorApi, PrintTaskHandler},
-        publisher::{Publisher, TaskPublisher},
-        task::{RetryType, Task},
-    },
-    PaydayResult,
-};
-use payday_node_lnd::lnd::{Lnd, LndConfig, LndTransactionStream};
-use payday_node_lnd::wrapper::LndRpcWrapper;
-use payday_surrealdb::{
-    block_height::BlockHeightStore,
-    create_surreal_db,
-    task::{SurrealTaskProcessor, SurrealTaskQueue},
-};
+use payday_core::api::on_chain_api::OnChainTransactionStreamApi;
+use payday_core::Result;
+use payday_node_lnd::lnd::{LndConfig, LndOnChainPaymentEventStream};
 use serde::{Deserialize, Serialize};
-use tokio::sync::Mutex;
+use tokio::task::JoinSet;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TestPayload {
@@ -31,82 +13,124 @@ struct TestPayload {
     sequence: u64,
 }
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
-async fn main() -> PaydayResult<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     let lnd_config = LndConfig {
-        name: "payday".to_string(),
-        address: "https://localhost:10009".to_string(),
-        cert_path: "/home/protom/dev/btc/payday_rs/tls.cert".to_string(),
-        macaroon_file: "/home/protom/dev/btc/payday_rs/admin.macaroon".to_string(),
+        node_id: "node1".to_string(),
+        address: "https://tbc-mutiny.u.voltageapp.io:10009".to_string(),
+        cert_path: "tls.cert".to_string(),
+        macaroon_file: "admin.macaroon".to_string(),
         network: Network::Signet,
     };
-    let lnd = Lnd::new(lnd_config.clone()).await?;
-    let wrapper = LndRpcWrapper::new(lnd_config.clone()).await?;
+    let lnd_config2 = LndConfig {
+        node_id: "node2".to_string(),
+        address: "https://localhost:10009".to_string(),
+        cert_path: "tls2.cert".to_string(),
+        macaroon_file: "admin2.macaroon".to_string(),
+        network: Network::Signet,
+    };
 
-    let invoice = wrapper
-        .create_invoice(
-            Amount::from_sat(300_000),
-            Some("test invoice".to_string()),
-            Some(31535000),
-        )
-        .await?;
+    // let lnd = Lnd::new(lnd_config.clone()).await?;
+    //
+    // let address = lnd.new_address().await?;
+    // println!("LND1 address: {:?}", address);
+    //
+    // let balance = lnd.get_onchain_balance().await?;
+    // println!("LND1 onchain balance {:?}", balance);
+    //
+    // let balances = lnd.get_balances().await?;
+    // println!("LND1 balances {:?}", balances);
+    //
+    // let ln_invoice = lnd
+    //     .create_ln_invoice(payday_core::payment::amount::Amount::sats(1000), None, None)
+    //     .await?;
+    // println!("LND1 invoice: {:?}", ln_invoice);
+    //
+    // let lnd2 = Lnd::new(lnd_config2.clone()).await?;
+    //
+    // let address2 = lnd2.new_address().await?;
+    // println!("LND2 address: {:?}", address2);
+    //
+    // let balance2 = lnd2.get_onchain_balance().await?;
+    // println!("LND2 onchain balance {:?}", balance2);
+    //
+    // let balances2 = lnd2.get_balances().await?;
+    // println!("LND2 balances {:?}", balances2);
+    //
+    // let ln_invoice2 = lnd2
+    //     .create_ln_invoice(payday_core::payment::amount::Amount::sats(1000), None, None)
+    //     .await?;
+    // println!("LND2 invoice: {:?}", ln_invoice2);
 
-    println!("{:?}", invoice);
+    let (tx, mut rx) = tokio::sync::mpsc::channel(100);
+    let transactions_1 = LndOnChainPaymentEventStream::new(lnd_config.clone());
+    let transactions_2 = LndOnChainPaymentEventStream::new(lnd_config2.clone());
+    let handles = vec![
+        transactions_1
+            .subscribe_on_chain_transactions(tx.clone(), Some(1868219))
+            .await
+            .unwrap(),
+        transactions_2
+            .subscribe_on_chain_transactions(tx, Some(1868219))
+            .await
+            .unwrap(),
+    ];
+    let set = JoinSet::from_iter(handles);
 
-    let address = lnd.new_address().await?;
-    println!("{:?}", address);
+    while let Some(event) = rx.recv().await {
+        println!("Event: {:?}", event);
+    }
 
-    let balance = lnd.get_onchain_balance().await?;
-    println!("{:?}", balance);
+    set.join_all().await;
 
-    let db = create_surreal_db("ws://localhost:8000", "payday", "payday").await?;
-    let block_height_store = BlockHeightStore::new(db.clone());
-    let processor = OnChainTransactionProcessor::new(
-        "lnd",
-        Box::new(block_height_store),
-        Box::new(OnChainTransactionPrintHandler),
-    );
-    let stream =
-        LndTransactionStream::new(lnd_config.clone(), Arc::new(Mutex::new(processor)), None);
-    let handle = stream.process_events().await?;
+    // let db = create_surreal_db("ws://localhost:8000", "payday", "payday").await?;
+    // let block_height_store = BlockHeightStore::new(db.clone());
+    // let processor = OnChainTransactionProcessor::new(
+    //     "lnd",
+    //     Box::new(block_height_store),
+    //     Box::new(OnChainTransactionPrintHandler),
+    // );
+    // let stream =
+    //     LndTransactionStream::new(lnd_config.clone(), Arc::new(Mutex::new(processor)), None);
+    // let handle = stream.process_events().await?;
 
     //let publisher = EventStream::new(db.clone(), "events");
-    let publisher = SurrealTaskQueue::new(db.clone(), "tasks");
+    // let publisher = SurrealTaskQueue::new(db.clone(), "tasks");
     //let publish_handle = publisher.subscribe().await?;
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    // tokio::time::sleep(Duration::from_secs(2)).await;
 
-    let processor = SurrealTaskProcessor::new(
-        db.clone(),
-        "tasks",
-        vec![Arc::new(Mutex::new(PrintTaskHandler))],
-    );
-
-    let processor_handle = processor.process().await?;
-
-    let task_payload = Task::new(
-        "anewone".to_owned(),
-        TestPayload {
-            name: "anothe test".to_string(),
-            processed: true,
-            sequence: 1,
-        },
-    );
-
-    publisher.publish(task_payload).await?;
-
-    let retry_task = Task::new(
-        "a retry task".to_owned(),
-        TestPayload {
-            name: "retry task".to_string(),
-            processed: false,
-            sequence: 2,
-        },
-    );
-
-    publisher.publish(retry_task.clone()).await?;
-    publisher
-        .retry(retry_task, RetryType::Fixed(3, Duration::from_secs(5)))
-        .await?;
+    // let processor = SurrealTaskProcessor::new(
+    //     db.clone(),
+    //     "tasks",
+    //     vec![Arc::new(Mutex::new(PrintTaskHandler))],
+    // );
+    //
+    // let processor_handle = processor.process().await?;
+    //
+    // let task_payload = Task::new(
+    //     "anewone".to_owned(),
+    //     TestPayload {
+    //         name: "anothe test".to_string(),
+    //         processed: true,
+    //         sequence: 1,
+    //     },
+    // );
+    //
+    // publisher.publish(task_payload).await?;
+    //
+    // let retry_task = Task::new(
+    //     "a retry task".to_owned(),
+    //     TestPayload {
+    //         name: "retry task".to_string(),
+    //         processed: false,
+    //         sequence: 2,
+    //     },
+    // );
+    //
+    // publisher.publish(retry_task.clone()).await?;
+    // publisher
+    //     .retry(retry_task, RetryType::Fixed(3, Duration::from_secs(5)))
+    //     .await?;
 
     //let outputs = HashMap::from([
     //    (
@@ -135,7 +159,7 @@ async fn main() -> PaydayResult<()> {
     //for event in pending {
     //    println!("Pending: {:?}", event);
     //}
-    let (_, _) = tokio::join!(handle, processor_handle);
+    //let (_, _) = tokio::join!(handle, processor_handle);
     //handle.await.expect("could not subscribe to onchain stream");
     //bind.await.expect("done subscriber");
     println!("Done");
