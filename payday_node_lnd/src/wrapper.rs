@@ -65,7 +65,7 @@ impl LndRpcWrapper {
     /// Get the unique name of the LND server. Names are used to
     /// identify the server in logs and associated addresses and invoices.
     pub fn get_name(&self) -> String {
-        self.config.name.to_string()
+        self.config.node_id.to_string()
     }
 
     async fn client(&self) -> MutexGuard<Client> {

@@ -1,10 +1,13 @@
-use bitcoin::{Amount, Network};
+use bitcoin::Network;
 
-use payday_core::api::on_chain_api::{GetOnChainBalanceApi, OnChainInvoiceApi};
+use payday_core::api::lightining_api::{GetLightningBalanceApi, LightningInvoiceApi};
+use payday_core::api::on_chain_api::{
+    GetOnChainBalanceApi, OnChainInvoiceApi, OnChainTransactionStreamApi,
+};
 use payday_core::Result;
-use payday_node_lnd::lnd::{Lnd, LndConfig};
-use payday_node_lnd::wrapper::LndRpcWrapper;
+use payday_node_lnd::lnd::{Lnd, LndConfig, LndOnChainPaymentEventStream};
 use serde::{Deserialize, Serialize};
+use tokio::task::JoinSet;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TestPayload {
@@ -16,30 +19,72 @@ struct TestPayload {
 #[tokio::main]
 async fn main() -> Result<()> {
     let lnd_config = LndConfig {
-        name: "payday".to_string(),
+        node_id: "node1".to_string(),
         address: "https://tbc-mutiny.u.voltageapp.io:10009".to_string(),
         cert_path: "tls.cert".to_string(),
         macaroon_file: "admin.macaroon".to_string(),
         network: Network::Signet,
     };
-    let lnd = Lnd::new(lnd_config.clone()).await?;
-    let wrapper = LndRpcWrapper::new(lnd_config.clone()).await?;
+    let lnd_config2 = LndConfig {
+        node_id: "node2".to_string(),
+        address: "https://localhost:10009".to_string(),
+        cert_path: "tls2.cert".to_string(),
+        macaroon_file: "admin2.macaroon".to_string(),
+        network: Network::Signet,
+    };
 
-    let invoice = wrapper
-        .create_invoice(
-            Amount::from_sat(300_000),
-            Some("test invoice".to_string()),
-            Some(31535000),
-        )
-        .await?;
+    // let lnd = Lnd::new(lnd_config.clone()).await?;
+    //
+    // let address = lnd.new_address().await?;
+    // println!("LND1 address: {:?}", address);
+    //
+    // let balance = lnd.get_onchain_balance().await?;
+    // println!("LND1 onchain balance {:?}", balance);
+    //
+    // let balances = lnd.get_balances().await?;
+    // println!("LND1 balances {:?}", balances);
+    //
+    // let ln_invoice = lnd
+    //     .create_ln_invoice(payday_core::payment::amount::Amount::sats(1000), None, None)
+    //     .await?;
+    // println!("LND1 invoice: {:?}", ln_invoice);
+    //
+    // let lnd2 = Lnd::new(lnd_config2.clone()).await?;
+    //
+    // let address2 = lnd2.new_address().await?;
+    // println!("LND2 address: {:?}", address2);
+    //
+    // let balance2 = lnd2.get_onchain_balance().await?;
+    // println!("LND2 onchain balance {:?}", balance2);
+    //
+    // let balances2 = lnd2.get_balances().await?;
+    // println!("LND2 balances {:?}", balances2);
+    //
+    // let ln_invoice2 = lnd2
+    //     .create_ln_invoice(payday_core::payment::amount::Amount::sats(1000), None, None)
+    //     .await?;
+    // println!("LND2 invoice: {:?}", ln_invoice2);
 
-    println!("{:?}", invoice);
+    let (tx, mut rx) = tokio::sync::mpsc::channel(100);
+    let transactions_1 = LndOnChainPaymentEventStream::new(lnd_config.clone());
+    let transactions_2 = LndOnChainPaymentEventStream::new(lnd_config2.clone());
+    let handles = vec![
+        transactions_1
+            .subscribe_on_chain_transactions(tx.clone(), Some(1868219))
+            .await
+            .unwrap(),
+        transactions_2
+            .subscribe_on_chain_transactions(tx, Some(1868219))
+            .await
+            .unwrap(),
+    ];
+    let set = JoinSet::from_iter(handles);
 
-    let address = lnd.new_address().await?;
-    println!("{:?}", address);
+    while let Some(event) = rx.recv().await {
+        println!("Event: {:?}", event);
+    }
 
-    let balance = lnd.get_onchain_balance().await?;
-    println!("{:?}", balance);
+    set.join_all().await;
 
     // let db = create_surreal_db("ws://localhost:8000", "payday", "payday").await?;
     // let block_height_store = BlockHeightStore::new(db.clone());

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::Result;
 use async_trait::async_trait;
 use bitcoin::{Address, Amount};
-use tokio::task::JoinHandle;
+use tokio::{sync::mpsc::Sender, task::JoinHandle};
 
 #[async_trait]
 pub trait GetOnChainBalanceApi: Send + Sync {
@@ -74,6 +74,15 @@ pub trait OnChainTransactionEventHandler: Send + Sync {
     async fn process_event(&self, event: OnChainTransactionEvent) -> Result<()>;
 }
 
+#[async_trait]
+pub trait OnChainTransactionStreamApi: Send + Sync {
+    async fn subscribe_on_chain_transactions(
+        &self,
+        sender: Sender<OnChainTransactionEvent>,
+        start_height: Option<i32>,
+    ) -> Result<JoinHandle<()>>;
+}
+
 #[derive(Debug, Clone)]
 pub struct OnChainBalance {
     pub total_balance: Amount,
@@ -110,6 +119,7 @@ impl OnChainTransactionEvent {
 pub struct OnChainTransaction {
     pub tx_id: String,
     pub block_height: i32,
+    pub node_id: String,
     pub address: Address,
     pub amount: Amount,
     pub confirmations: i32,

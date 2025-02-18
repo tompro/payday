@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BtcOnChainInvoice {
     pub invoice_id: InvoiceId,
+    pub node_id: String,
     pub address: String,
     pub amount: Amount,
     pub received_amount: Amount,
@@ -23,6 +24,7 @@ impl Default for BtcOnChainInvoice {
     fn default() -> Self {
         Self {
             invoice_id: "".to_string(),
+            node_id: "".to_string(),
             address: "".to_string(),
             amount: Amount::zero(Currency::Btc),
             received_amount: Amount::zero(Currency::Btc),
@@ -44,6 +46,7 @@ pub struct OnChainInvoiceServices {}
 pub enum OnChainInvoiceCommand {
     CreateInvoice {
         invoice_id: InvoiceId,
+        node_id: String,
         amount: Amount,
         address: String,
     },
@@ -106,6 +109,7 @@ impl From<OnChainTransactionEvent> for OnChainCommand {
 pub enum OnChainInvoiceEvent {
     InvoiceCreated {
         invoice_id: InvoiceId,
+        node_id: String,
         amount: Amount,
         address: String,
     },
@@ -157,6 +161,7 @@ impl Aggregate for BtcOnChainInvoice {
         match command {
             OnChainInvoiceCommand::CreateInvoice {
                 invoice_id,
+                node_id,
                 amount,
                 address,
             } => {
@@ -169,6 +174,7 @@ impl Aggregate for BtcOnChainInvoice {
 
                 Ok(vec![OnChainInvoiceEvent::InvoiceCreated {
                     invoice_id,
+                    node_id,
                     amount,
                     address: address.to_string(),
                 }])
@@ -198,10 +204,12 @@ impl Aggregate for BtcOnChainInvoice {
         match event {
             OnChainInvoiceEvent::InvoiceCreated {
                 invoice_id,
+                node_id,
                 amount,
                 address,
             } => {
                 self.invoice_id = invoice_id;
+                self.node_id = node_id;
                 self.amount = amount;
                 self.address = address.to_string();
             }
@@ -248,6 +256,7 @@ mod aggregate_tests {
             .given_no_previous_events()
             .when(OnChainInvoiceCommand::CreateInvoice {
                 invoice_id: "123".to_string(),
+                node_id: "node1".to_string(),
                 amount: amount_fn(100_000),
                 address: "tb1q6xm2qgh5r83lvmmu0v7c3d4wrd9k2uxu3sgcr4".to_string(),
             })
@@ -322,6 +331,7 @@ mod aggregate_tests {
     fn mock_created_event(amount: u64) -> OnChainInvoiceEvent {
         OnChainInvoiceEvent::InvoiceCreated {
             invoice_id: "123".to_string(),
+            node_id: "node1".to_string(),
             amount: amount_fn(amount),
             address: "tb1q6xm2qgh5r83lvmmu0v7c3d4wrd9k2uxu3sgcr4".to_string(),
         }
