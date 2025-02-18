@@ -21,6 +21,13 @@ impl Amount {
             amount: 0,
         }
     }
+
+    pub fn sats(sats: u64) -> Self {
+        Self {
+            currency: Currency::Btc,
+            amount: sats,
+        }
+    }
 }
 
 impl Default for Amount {

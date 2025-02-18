@@ -5,8 +5,6 @@ use async_trait::async_trait;
 use bitcoin::{Address, Amount};
 use tokio::task::JoinHandle;
 
-use super::lightining_api::ChannelBalance;
-
 #[async_trait]
 pub trait GetOnChainBalanceApi: Send + Sync {
     /// Get the current OnChain balance of the wallet.
@@ -76,27 +74,21 @@ pub trait OnChainTransactionEventHandler: Send + Sync {
     async fn process_event(&self, event: OnChainTransactionEvent) -> Result<()>;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OnChainBalance {
     pub total_balance: Amount,
     pub unconfirmed_balance: Amount,
     pub confirmed_balance: Amount,
 }
 
-#[derive(Debug)]
-pub struct Balance {
-    pub onchain: OnChainBalance,
-    pub channel: ChannelBalance,
-}
-
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct OnChainPaymentResult {
     pub tx_id: String,
     pub amounts: HashMap<String, Amount>,
     pub fee: Amount,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum OnChainTransactionEvent {
     ReceivedUnconfirmed(OnChainTransaction),
     ReceivedConfirmed(OnChainTransaction),

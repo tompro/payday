@@ -61,10 +61,3 @@ pub trait PaymentProcessorApi: Send + Sync {
     /// Processes payment events for this system.
     async fn process_payment_events(&self) -> crate::Result<()>;
 }
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LnInvoice {
-    pub invoice: String,
-    pub r_hash: String,
-    pub add_index: u64,
-}

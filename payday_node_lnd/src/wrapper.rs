@@ -4,19 +4,20 @@
 //! handles connection and network checks, maps errors to project
 //! specific errors, and provides a convenient interface for the
 //! operations needed for invoicing.
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
-use bitcoin::{hex::DisplayHex, Address, Amount, Network};
+use bitcoin::{hex::DisplayHex, Address, Amount, Network, PublicKey};
 use fedimint_tonic_lnd::{
     lnrpc::{
-        ChannelBalanceRequest, ChannelBalanceResponse, GetInfoRequest, GetTransactionsRequest,
-        Invoice, SendCoinsRequest, SendManyRequest, Transaction, WalletBalanceRequest,
-        WalletBalanceResponse,
+        payment::PaymentStatus, ChannelBalanceRequest, ChannelBalanceResponse, GetInfoRequest,
+        GetTransactionsRequest, Invoice, SendCoinsRequest, SendManyRequest, Transaction,
+        WalletBalanceRequest, WalletBalanceResponse,
     },
     Client,
 };
+use lightning_invoice::Bolt11Invoice;
 use payday_btc::to_address;
-use payday_core::{payment::invoice::LnInvoice, Error, PaydayStream, Result};
+use payday_core::{api::lightining_api::LnInvoice, Error, PaydayStream, Result};
 use tokio::sync::{Mutex, MutexGuard};
 use tokio_stream::StreamExt;
 
@@ -193,6 +194,7 @@ impl LndRpcWrapper {
         Ok(Amount::from_sat(fee))
     }
 
+    /// Creates a lightning invoice.
     pub async fn create_invoice(
         &self,
         amount: Amount,
@@ -217,6 +219,81 @@ impl LndRpcWrapper {
             r_hash: invoice.r_hash.as_hex().to_string(),
             add_index: invoice.add_index,
         })
+    }
+
+    /// Pay a given bolt11 invoice. The fee limit is optional and defaults to 0 (no limit) the
+    /// optional timeout defaults to 60 seconds.
+    pub async fn send_lightning_payment(
+        &self,
+        request: fedimint_tonic_lnd::routerrpc::SendPaymentRequest,
+    ) -> Result<fedimint_tonic_lnd::lnrpc::Payment> {
+        let mut lnd = self.client().await;
+        let result = lnd
+            .router()
+            .send_payment_v2(request)
+            .await
+            .map_err(|e| Error::NodeApiError(e.to_string()))?;
+
+        // subscribe until the first non-inflight payment is received
+        match result
+            .into_inner()
+            .filter_map(|r| match r.ok() {
+                Some(p) if p.status() != PaymentStatus::InFlight => Some(p),
+                _ => None,
+            })
+            .next()
+            .await
+        {
+            Some(p) if p.status() == PaymentStatus::Succeeded => Ok(p),
+            Some(p) => Err(Error::LightningPaymentFailed(format!(
+                "Lightning payment failed: Status: {}, Reason:{}",
+                p.status().as_str_name(),
+                p.failure_reason().as_str_name()
+            ))),
+            _ => Err(Error::LightningPaymentFailed(
+                "Lightning payment failed without response".to_string(),
+            )),
+        }
+    }
+
+    /// Pay a given bolt11 invoice. The fee limit is optional and defaults to 0 (no limit) the
+    /// optional timeout defaults to 60 seconds.
+    pub async fn pay_invoice(
+        &self,
+        invoice: Bolt11Invoice,
+        fee_limit_sat: Option<i64>,
+        timeout: Option<Duration>,
+    ) -> Result<fedimint_tonic_lnd::lnrpc::Payment> {
+        let timeout_seconds = timeout.map(|t| t.as_secs() as i32).unwrap_or(60);
+        let result = self
+            .send_lightning_payment(fedimint_tonic_lnd::routerrpc::SendPaymentRequest {
+                payment_request: invoice.to_string(),
+                timeout_seconds,
+                fee_limit_sat: fee_limit_sat.unwrap_or(0),
+                no_inflight_updates: true,
+                ..Default::default()
+            })
+            .await?;
+        Ok(result)
+    }
+
+    /// Pay a specified amount to a node id. The optional timeout defaults to 60 seconds.
+    pub async fn pay_to_node_id(
+        &self,
+        node_id: PublicKey,
+        amount: Amount,
+        timeout: Option<Duration>,
+    ) -> Result<fedimint_tonic_lnd::lnrpc::Payment> {
+        let timeout_seconds = timeout.map(|t| t.as_secs() as i32).unwrap_or(60);
+        let result = self
+            .send_lightning_payment(fedimint_tonic_lnd::routerrpc::SendPaymentRequest {
+                dest: node_id.to_bytes(),
+                amt: amount.to_sat() as i64,
+                timeout_seconds,
+                ..Default::default()
+            })
+            .await?;
+        Ok(result)
     }
 
     /// Get a stream of onchain transactions relevant to the wallet. As LND RPC does not handle

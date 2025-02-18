@@ -1,19 +1,27 @@
 use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
-use bitcoin::{Address, Amount, Network};
+use bitcoin::{Address, Network};
 
 use fedimint_tonic_lnd::{
     lnrpc::{GetTransactionsRequest, Transaction},
     Client,
 };
+use lightning_invoice::Bolt11Invoice;
 use payday_btc::to_address;
 use payday_core::{
-    api::on_chain_api::{
-        GetOnChainBalanceApi, OnChainBalance, OnChainInvoiceApi, OnChainPaymentApi,
-        OnChainPaymentResult, OnChainStreamApi, OnChainTransaction, OnChainTransactionApi,
-        OnChainTransactionEvent, OnChainTransactionEventProcessorApi,
+    api::{
+        lightining_api::{
+            ChannelBalance, GetLightningBalanceApi, LightningInvoiceApi, LightningPaymentApi,
+            LnInvoice, NodeBalance,
+        },
+        on_chain_api::{
+            GetOnChainBalanceApi, OnChainBalance, OnChainInvoiceApi, OnChainPaymentApi,
+            OnChainPaymentResult, OnChainStreamApi, OnChainTransaction, OnChainTransactionApi,
+            OnChainTransactionEvent, OnChainTransactionEventProcessorApi,
+        },
     },
+    payment::amount::Amount,
     Result,
 };
 use tokio::{sync::Mutex, task::JoinHandle};
@@ -46,9 +54,49 @@ impl GetOnChainBalanceApi for Lnd {
 }
 
 #[async_trait]
+impl GetLightningBalanceApi for Lnd {
+    async fn get_channel_balance(&self) -> Result<ChannelBalance> {
+        let res = self.client.get_channel_balance().await?;
+
+        Ok(ChannelBalance {
+            local_balance: res
+                .local_balance
+                .map(|a| Amount::sats(a.sat))
+                .get_or_insert(Amount::sats(0))
+                .to_owned(),
+            remote_balance: res
+                .remote_balance
+                .map(|a| Amount::sats(a.sat))
+                .get_or_insert(Amount::sats(0))
+                .to_owned(),
+        })
+    }
+
+    async fn get_balances(&self) -> Result<NodeBalance> {
+        let onchain = self.get_onchain_balance().await?;
+        let channel = self.get_channel_balance().await?;
+        Ok(NodeBalance { onchain, channel })
+    }
+}
+
+#[async_trait]
 impl OnChainInvoiceApi for Lnd {
     async fn new_address(&self) -> Result<Address> {
         self.client.new_address().await
+    }
+}
+
+#[async_trait]
+impl LightningInvoiceApi for Lnd {
+    async fn create_ln_invoice(
+        &self,
+        amount: Amount,
+        memo: Option<String>,
+        ttl: Option<i64>,
+    ) -> Result<LnInvoice> {
+        let amount = bitcoin::Amount::from_sat(amount.amount);
+        let invoice = self.client.create_invoice(amount, memo, ttl).await?;
+        Ok(invoice)
     }
 }
 
@@ -61,8 +109,8 @@ impl OnChainPaymentApi for Lnd {
     async fn estimate_fee(
         &self,
         target_conf: i32,
-        outputs: HashMap<String, Amount>,
-    ) -> Result<Amount> {
+        outputs: HashMap<String, bitcoin::Amount>,
+    ) -> Result<bitcoin::Amount> {
         let out = outputs
             .iter()
             .map(|p| (p.0.to_owned(), p.1.to_sat() as i64))
@@ -73,9 +121,9 @@ impl OnChainPaymentApi for Lnd {
 
     async fn send(
         &self,
-        amount: Amount,
+        amount: bitcoin::Amount,
         address: String,
-        sats_per_vbyte: Amount,
+        sats_per_vbyte: bitcoin::Amount,
     ) -> Result<OnChainPaymentResult> {
         let tx_id = self
             .client
@@ -91,8 +139,8 @@ impl OnChainPaymentApi for Lnd {
 
     async fn batch_send(
         &self,
-        outputs: HashMap<String, Amount>,
-        sats_per_vbyte: Amount,
+        outputs: HashMap<String, bitcoin::Amount>,
+        sats_per_vbyte: bitcoin::Amount,
     ) -> Result<OnChainPaymentResult> {
         let out = outputs
             .iter()
@@ -111,6 +159,22 @@ impl OnChainPaymentApi for Lnd {
                 .collect(),
             fee: sats_per_vbyte,
         })
+    }
+}
+
+#[async_trait]
+impl LightningPaymentApi for Lnd {
+    async fn pay_to_node_pub_key(&self, pub_key: String, amount: Amount) -> Result<()> {
+        let amt = bitcoin::Amount::from_sat(amount.amount);
+        self.client
+            .pay_to_node_id(pub_key.parse()?, amt, None)
+            .await?;
+        Ok(())
+    }
+
+    async fn pay_invoice(&self, invoice: Bolt11Invoice) -> Result<()> {
+        self.client.pay_invoice(invoice, None, None).await?;
+        Ok(())
     }
 }
 
@@ -143,11 +207,11 @@ pub struct LndConfig {
 }
 
 /// Converts a satoshi amount to an Amount
-fn to_amount(sats: i64) -> Amount {
+fn to_amount(sats: i64) -> bitcoin::Amount {
     if sats < 0 {
-        Amount::ZERO
+        bitcoin::Amount::ZERO
     } else {
-        Amount::from_sat(sats.unsigned_abs())
+        bitcoin::Amount::from_sat(sats.unsigned_abs())
     }
 }
 
@@ -173,7 +237,7 @@ fn to_on_chain_events(tx: &Transaction, chain: Network) -> Result<Vec<OnChainTra
                     tx_id: tx.tx_hash.to_owned(),
                     block_height: tx.block_height,
                     confirmations: tx.num_confirmations,
-                    amount: Amount::from_sat(tx.amount.unsigned_abs()),
+                    amount: bitcoin::Amount::from_sat(tx.amount.unsigned_abs()),
                     address,
                 };
 

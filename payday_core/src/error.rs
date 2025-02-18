@@ -8,6 +8,8 @@ use crate::events::MessageError;
 pub enum Error {
     NodeConnectError(String),
     NodeApiError(String),
+    LightningPaymentFailed(String),
+    PublicKey(String),
     DbError(String),
     InvalidBitcoinAddress(String),
     InvalidBitcoinNetwork(String),
@@ -29,6 +31,12 @@ impl From<ParseError> for Error {
 impl From<ParseAmountError> for Error {
     fn from(value: ParseAmountError) -> Self {
         Error::InvalidBitcoinAmount(value.to_string())
+    }
+}
+
+impl From<bitcoin::key::ParsePublicKeyError> for Error {
+    fn from(value: bitcoin::key::ParsePublicKeyError) -> Self {
+        Error::PublicKey(value.to_string())
     }
 }
 
