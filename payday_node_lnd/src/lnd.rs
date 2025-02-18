@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 use async_trait::async_trait;
 use bitcoin::{Address, Network};
@@ -17,18 +17,14 @@ use payday_core::{
         },
         on_chain_api::{
             GetOnChainBalanceApi, OnChainBalance, OnChainInvoiceApi, OnChainPaymentApi,
-            OnChainPaymentResult, OnChainStreamApi, OnChainTransaction, OnChainTransactionApi,
-            OnChainTransactionEvent, OnChainTransactionEventProcessorApi,
-            OnChainTransactionStreamApi,
+            OnChainPaymentResult, OnChainTransaction, OnChainTransactionApi,
+            OnChainTransactionEvent, OnChainTransactionStreamApi,
         },
     },
     payment::amount::Amount,
     Result,
 };
-use tokio::{
-    sync::{mpsc::Sender, Mutex},
-    task::JoinHandle,
-};
+use tokio::{sync::mpsc::Sender, task::JoinHandle};
 use tokio_stream::StreamExt;
 
 use crate::wrapper::LndRpcWrapper;
