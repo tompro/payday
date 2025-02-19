@@ -68,11 +68,11 @@ async fn main() -> Result<()> {
     let transactions_2 = LndPaymentEventStream::new(lnd_config2.clone());
     let handles = vec![
         transactions_1
-            .subscribe_lightning_transactions(tx.clone(), Some(40))
+            .subscribe_lightning_transactions(tx.clone(), Some(1))
             .await
             .unwrap(),
         transactions_2
-            .subscribe_lightning_transactions(tx, Some(5))
+            .subscribe_lightning_transactions(tx, Some(1))
             .await
             .unwrap(),
     ];

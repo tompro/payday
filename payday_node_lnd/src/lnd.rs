@@ -317,22 +317,9 @@ impl LightningTransactionStreamApi for LndPaymentEventStream {
 
             while let Some(event) = stream.next().await {
                 if event.state == LND_SETTLED {
-                    // Here we double check that the invoice is actually settled
-                    if let Ok(response) = lnd
-                        .invoices()
-                        .lookup_invoice_v2(LookupInvoiceMsg {
-                            invoice_ref: Some(InvoiceRef::PaymentHash(event.r_hash.clone())),
-                            ..Default::default()
-                        })
-                        .await
-                    {
-                        let invoice = response.into_inner();
-                        if invoice.state == LND_SETTLED {
-                            if let Ok(event) = to_lightning_event(invoice, &config.node_id) {
-                                if let Err(e) = sender.send(event).await {
-                                    println!("Failed to send lightning transaction event: {:?}", e);
-                                }
-                            }
+                    if let Ok(event) = to_lightning_event(event, &config.node_id) {
+                        if let Err(e) = sender.send(event).await {
+                            println!("Failed to send lightning transaction event: {:?}", e);
                         }
                     }
                 }
