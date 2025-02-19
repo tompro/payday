@@ -9,6 +9,7 @@ pub enum Error {
     NodeConnectError(String),
     NodeApiError(String),
     LightningPaymentFailed(String),
+    InvalidInvoiceState(String),
     PublicKey(String),
     DbError(String),
     InvalidBitcoinAddress(String),
