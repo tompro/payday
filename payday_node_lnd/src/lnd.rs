@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use bitcoin::{Address, Network};
+use bitcoin::{hex::DisplayHex, Address, Network};
 
 use fedimint_tonic_lnd::{
-    lnrpc::{GetTransactionsRequest, Transaction},
+    invoicesrpc::{lookup_invoice_msg::InvoiceRef, LookupInvoiceMsg},
+    lnrpc::{GetTransactionsRequest, InvoiceSubscription, Transaction},
     Client,
 };
 use lightning_invoice::Bolt11Invoice;
@@ -13,6 +14,7 @@ use payday_core::{
     api::{
         lightining_api::{
             ChannelBalance, GetLightningBalanceApi, LightningInvoiceApi, LightningPaymentApi,
+            LightningTransaction, LightningTransactionEvent, LightningTransactionStreamApi,
             LnInvoice, NodeBalance,
         },
         on_chain_api::{
@@ -28,6 +30,9 @@ use tokio::{sync::mpsc::Sender, task::JoinHandle};
 use tokio_stream::StreamExt;
 
 use crate::wrapper::LndRpcWrapper;
+
+// The numeric state that LND indicates a settled invoice with.
+const LND_SETTLED: i32 = 1;
 
 #[derive(Clone)]
 pub struct Lnd {
@@ -207,65 +212,11 @@ pub struct LndConfig {
     pub network: Network,
 }
 
-/// Converts a satoshi amount to an Amount
-fn to_amount(sats: i64) -> bitcoin::Amount {
-    if sats < 0 {
-        bitcoin::Amount::ZERO
-    } else {
-        bitcoin::Amount::from_sat(sats.unsigned_abs())
-    }
-}
-
-/// Converts a Transaction to a list of OnChainTransactionEvents.
-fn to_on_chain_events(
-    tx: &Transaction,
-    chain: Network,
-    node_id: &str,
-) -> Result<Vec<OnChainTransactionEvent>> {
-    let received = tx.amount > 0;
-    let confirmed = tx.num_confirmations > 0;
-
-    let res = tx
-        .output_details
-        .iter()
-        .filter(|d| {
-            if received {
-                d.is_our_address
-            } else {
-                !d.is_our_address
-            }
-        })
-        .flat_map(|d| {
-            let address = to_address(&d.address, chain);
-            if let Ok(address) = address {
-                let payload = OnChainTransaction {
-                    tx_id: tx.tx_hash.to_owned(),
-                    block_height: tx.block_height,
-                    node_id: node_id.to_owned(),
-                    confirmations: tx.num_confirmations,
-                    amount: bitcoin::Amount::from_sat(tx.amount.unsigned_abs()),
-                    address,
-                };
-
-                match (confirmed, received) {
-                    (true, true) => Some(OnChainTransactionEvent::ReceivedConfirmed(payload)),
-                    (true, false) => Some(OnChainTransactionEvent::SentConfirmed(payload)),
-                    (false, true) => Some(OnChainTransactionEvent::ReceivedUnconfirmed(payload)),
-                    (false, false) => Some(OnChainTransactionEvent::SentUnconfirmed(payload)),
-                }
-            } else {
-                None
-            }
-        })
-        .collect();
-    Ok(res)
-}
-
-pub struct LndOnChainPaymentEventStream {
+pub struct LndPaymentEventStream {
     config: LndConfig,
 }
 
-impl LndOnChainPaymentEventStream {
+impl LndPaymentEventStream {
     pub fn new(config: LndConfig) -> Self {
         Self { config }
     }
@@ -279,7 +230,7 @@ impl LndOnChainPaymentEventStream {
 }
 
 #[async_trait]
-impl OnChainTransactionStreamApi for LndOnChainPaymentEventStream {
+impl OnChainTransactionStreamApi for LndPaymentEventStream {
     async fn subscribe_on_chain_transactions(
         &self,
         sender: Sender<OnChainTransactionEvent>,
@@ -332,4 +283,129 @@ impl OnChainTransactionStreamApi for LndOnChainPaymentEventStream {
         });
         Ok(handle)
     }
+}
+
+#[async_trait]
+impl LightningTransactionStreamApi for LndPaymentEventStream {
+    async fn subscribe_lightning_transactions(
+        &self,
+        sender: Sender<LightningTransactionEvent>,
+        settle_index: Option<u64>,
+    ) -> Result<JoinHandle<()>> {
+        let config = self.config.clone();
+
+        let handle = tokio::spawn(async move {
+            let sender = sender.clone();
+            let mut lnd: Client = fedimint_tonic_lnd::connect(
+                config.address.to_string(),
+                config.cert_path.to_string(),
+                config.macaroon_file.to_string(),
+            )
+            .await
+            .expect("Failed to connect to LND lightning transaction stream");
+
+            let mut stream = lnd
+                .lightning()
+                .subscribe_invoices(InvoiceSubscription {
+                    settle_index: settle_index.unwrap_or_default(),
+                    ..Default::default()
+                })
+                .await
+                .expect("Failed to subscribe to LND lightning transaction events")
+                .into_inner()
+                .filter_map(|tx| tx.ok());
+
+            while let Some(event) = stream.next().await {
+                if event.state == LND_SETTLED {
+                    // Here we double check that the invoice is actually settled
+                    if let Ok(response) = lnd
+                        .invoices()
+                        .lookup_invoice_v2(LookupInvoiceMsg {
+                            invoice_ref: Some(InvoiceRef::PaymentHash(event.r_hash.clone())),
+                            ..Default::default()
+                        })
+                        .await
+                    {
+                        let invoice = response.into_inner();
+                        if invoice.state == LND_SETTLED {
+                            if let Ok(event) = to_lightning_event(invoice, &config.node_id) {
+                                if let Err(e) = sender.send(event).await {
+                                    println!("Failed to send lightning transaction event: {:?}", e);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        Ok(handle)
+    }
+}
+
+fn to_lightning_event(
+    event: fedimint_tonic_lnd::lnrpc::Invoice,
+    node_id: &str,
+) -> Result<LightningTransactionEvent> {
+    Ok(LightningTransactionEvent::Settled(LightningTransaction {
+        node_id: node_id.to_owned(),
+        r_hash: event.r_hash.to_lower_hex_string(),
+        invoice: event.payment_request.to_owned(),
+        amount: Amount::sats(event.value as u64),
+        amount_paid: Amount::sats(event.amt_paid_sat as u64),
+        settle_index: event.settle_index,
+    }))
+}
+
+/// Converts a satoshi amount to an Amount
+fn to_amount(sats: i64) -> bitcoin::Amount {
+    if sats < 0 {
+        bitcoin::Amount::ZERO
+    } else {
+        bitcoin::Amount::from_sat(sats.unsigned_abs())
+    }
+}
+
+/// Converts a Transaction to a list of OnChainTransactionEvents.
+fn to_on_chain_events(
+    tx: &Transaction,
+    chain: Network,
+    node_id: &str,
+) -> Result<Vec<OnChainTransactionEvent>> {
+    let received = tx.amount > 0;
+    let confirmed = tx.num_confirmations > 0;
+
+    let res = tx
+        .output_details
+        .iter()
+        .filter(|d| {
+            if received {
+                d.is_our_address
+            } else {
+                !d.is_our_address
+            }
+        })
+        .flat_map(|d| {
+            let address = to_address(&d.address, chain);
+            if let Ok(address) = address {
+                let payload = OnChainTransaction {
+                    tx_id: tx.tx_hash.to_owned(),
+                    block_height: tx.block_height,
+                    node_id: node_id.to_owned(),
+                    confirmations: tx.num_confirmations,
+                    amount: bitcoin::Amount::from_sat(tx.amount.unsigned_abs()),
+                    address,
+                };
+
+                match (confirmed, received) {
+                    (true, true) => Some(OnChainTransactionEvent::ReceivedConfirmed(payload)),
+                    (true, false) => Some(OnChainTransactionEvent::SentConfirmed(payload)),
+                    (false, true) => Some(OnChainTransactionEvent::ReceivedUnconfirmed(payload)),
+                    (false, false) => Some(OnChainTransactionEvent::SentUnconfirmed(payload)),
+                }
+            } else {
+                None
+            }
+        })
+        .collect();
+    Ok(res)
 }

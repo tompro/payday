@@ -57,11 +57,6 @@ pub trait OnChainTransactionApi: Send + Sync {
 }
 
 #[async_trait]
-pub trait OnChainStreamApi: Send + Sync {
-    async fn process_events(&self) -> Result<JoinHandle<()>>;
-}
-
-#[async_trait]
 pub trait OnChainTransactionEventProcessorApi: Send + Sync {
     fn node_id(&self) -> String;
     async fn get_block_height(&self) -> Result<i32>;

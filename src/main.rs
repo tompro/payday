@@ -1,8 +1,9 @@
 use bitcoin::Network;
 
+use payday_core::api::lightining_api::LightningTransactionStreamApi;
 use payday_core::api::on_chain_api::OnChainTransactionStreamApi;
 use payday_core::Result;
-use payday_node_lnd::lnd::{LndConfig, LndOnChainPaymentEventStream};
+use payday_node_lnd::lnd::{LndConfig, LndPaymentEventStream};
 use serde::{Deserialize, Serialize};
 use tokio::task::JoinSet;
 
@@ -63,20 +64,21 @@ async fn main() -> Result<()> {
     // println!("LND2 invoice: {:?}", ln_invoice2);
 
     let (tx, mut rx) = tokio::sync::mpsc::channel(100);
-    let transactions_1 = LndOnChainPaymentEventStream::new(lnd_config.clone());
-    let transactions_2 = LndOnChainPaymentEventStream::new(lnd_config2.clone());
+    let transactions_1 = LndPaymentEventStream::new(lnd_config.clone());
+    let transactions_2 = LndPaymentEventStream::new(lnd_config2.clone());
     let handles = vec![
         transactions_1
-            .subscribe_on_chain_transactions(tx.clone(), Some(1868219))
+            .subscribe_lightning_transactions(tx.clone(), Some(40))
             .await
             .unwrap(),
         transactions_2
-            .subscribe_on_chain_transactions(tx, Some(1868219))
+            .subscribe_lightning_transactions(tx, Some(5))
             .await
             .unwrap(),
     ];
     let set = JoinSet::from_iter(handles);
 
+    println!("Subscribed to transactions");
     while let Some(event) = rx.recv().await {
         println!("Event: {:?}", event);
     }
