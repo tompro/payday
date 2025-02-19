@@ -1,7 +1,6 @@
 use bitcoin::Network;
 
 use payday_core::api::lightining_api::LightningTransactionStreamApi;
-use payday_core::api::on_chain_api::OnChainTransactionStreamApi;
 use payday_core::Result;
 use payday_node_lnd::lnd::{LndConfig, LndPaymentEventStream};
 use serde::{Deserialize, Serialize};

@@ -4,7 +4,6 @@ use async_trait::async_trait;
 use bitcoin::{hex::DisplayHex, Address, Network};
 
 use fedimint_tonic_lnd::{
-    invoicesrpc::{lookup_invoice_msg::InvoiceRef, LookupInvoiceMsg},
     lnrpc::{GetTransactionsRequest, InvoiceSubscription, Transaction},
     Client,
 };
