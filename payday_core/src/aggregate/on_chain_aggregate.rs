@@ -1,13 +1,17 @@
+use crate::{
+    api::on_chain_api::OnChainTransactionEvent,
+    payment::{
+        amount::Amount,
+        currency::Currency,
+        invoice::{Error, InvoiceId},
+    },
+};
 use async_trait::async_trait;
 use cqrs_es::{Aggregate, DomainEvent};
-use payday_core::api::on_chain_api::OnChainTransactionEvent;
-use payday_core::payment::amount::Amount;
-use payday_core::payment::currency::Currency;
-use payday_core::payment::invoice::{Error, InvoiceId};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BtcOnChainInvoice {
+pub struct OnChainInvoice {
     pub invoice_id: InvoiceId,
     pub node_id: String,
     pub address: String,
@@ -20,7 +24,7 @@ pub struct BtcOnChainInvoice {
     pub paid: bool,
 }
 
-impl Default for BtcOnChainInvoice {
+impl Default for OnChainInvoice {
     fn default() -> Self {
         Self {
             invoice_id: "".to_string(),
@@ -143,14 +147,14 @@ impl DomainEvent for OnChainInvoiceEvent {
 }
 
 #[async_trait]
-impl Aggregate for BtcOnChainInvoice {
+impl Aggregate for OnChainInvoice {
     type Command = OnChainInvoiceCommand;
     type Event = OnChainInvoiceEvent;
     type Error = Error;
     type Services = ();
 
     fn aggregate_type() -> String {
-        "BtcOnChainInvoice".to_string()
+        "OnChainInvoice".to_string()
     }
 
     async fn handle(
@@ -242,12 +246,12 @@ impl Aggregate for BtcOnChainInvoice {
 
 #[cfg(test)]
 mod aggregate_tests {
+    use crate::payment::currency::Currency;
     use cqrs_es::test::TestFramework;
-    use payday_core::payment::currency::Currency;
 
     use super::*;
 
-    type OnChainInvoiceTestFramework = TestFramework<BtcOnChainInvoice>;
+    type OnChainInvoiceTestFramework = TestFramework<OnChainInvoice>;
 
     #[test]
     fn test_create_invoice() {

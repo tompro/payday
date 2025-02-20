@@ -3,12 +3,12 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use bitcoin::{hex::DisplayHex, Address, Network};
 
+use crate::to_address;
 use fedimint_tonic_lnd::{
     lnrpc::{GetTransactionsRequest, InvoiceSubscription, Transaction},
     Client,
 };
 use lightning_invoice::Bolt11Invoice;
-use payday_btc::to_address;
 use payday_core::{
     api::{
         lightining_api::{

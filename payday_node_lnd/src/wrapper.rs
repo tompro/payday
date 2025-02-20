@@ -6,6 +6,7 @@
 //! operations needed for invoicing.
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
+use crate::to_address;
 use bitcoin::{hex::DisplayHex, Address, Amount, Network, PublicKey};
 use fedimint_tonic_lnd::{
     lnrpc::{
@@ -16,7 +17,6 @@ use fedimint_tonic_lnd::{
     Client,
 };
 use lightning_invoice::Bolt11Invoice;
-use payday_btc::to_address;
 use payday_core::{api::lightining_api::LnInvoice, Error, Result};
 use tokio::sync::{Mutex, MutexGuard};
 use tokio_stream::StreamExt;
