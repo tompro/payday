@@ -17,7 +17,7 @@ use fedimint_tonic_lnd::{
 };
 use lightning_invoice::Bolt11Invoice;
 use payday_btc::to_address;
-use payday_core::{api::lightining_api::LnInvoice, Error, PaydayStream, Result};
+use payday_core::{api::lightining_api::LnInvoice, Error, Result};
 use tokio::sync::{Mutex, MutexGuard};
 use tokio_stream::StreamExt;
 
@@ -294,21 +294,6 @@ impl LndRpcWrapper {
             })
             .await?;
         Ok(result)
-    }
-
-    /// Get a stream of onchain transactions relevant to the wallet. As LND RPC does not handle
-    /// the request arguments, we do not provide any on this method to avoid confusion.
-    pub async fn subscribe_transactions(&self) -> Result<PaydayStream<Transaction>> {
-        let mut lnd = self.client().await;
-        let stream = lnd
-            .lightning()
-            .subscribe_transactions(GetTransactionsRequest::default())
-            .await
-            .map_err(|e| Error::NodeApiError(e.to_string()))?
-            .into_inner()
-            .filter(|tx| tx.is_ok())
-            .map(|tx| tx.unwrap());
-        Ok(Box::pin(stream))
     }
 
     /// Get a list of onchain transactions between the given start and end heights.
