@@ -2283,20 +2283,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "17359afc20d7ab31fdb42bb844c8b3bb1dabd7dcf7e68428492da7f16966fcef"
 
 [[package]]
-name = "payday_btc"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "bitcoin",
- "cqrs-es",
- "payday_core",
- "serde",
- "serde_json",
- "tokio",
- "tokio-stream",
-]
-
-[[package]]
 name = "payday_core"
 version = "0.1.0"
 dependencies = [
@@ -2320,7 +2306,6 @@ dependencies = [
  "cqrs-es",
  "fedimint-tonic-lnd",
  "lightning-invoice",
- "payday_btc",
  "payday_core",
  "tokio",
  "tokio-stream",
@@ -2332,7 +2317,6 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "cqrs-es",
- "payday_btc",
  "payday_core",
  "postgres-es",
  "serde",
@@ -2346,7 +2330,6 @@ name = "payday_rs"
 version = "0.1.0"
 dependencies = [
  "bitcoin",
- "payday_btc",
  "payday_core",
  "payday_node_lnd",
  "payday_postgres",

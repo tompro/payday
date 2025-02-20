@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
-use payday_core::{
+use crate::{
     api::on_chain_api::{
         OnChainTransactionEvent, OnChainTransactionEventHandler,
         OnChainTransactionEventProcessorApi,
@@ -9,6 +8,7 @@ use payday_core::{
     persistence::block_height::BlockHeightStoreApi,
     Result,
 };
+use async_trait::async_trait;
 use tokio::sync::Mutex;
 
 pub struct OnChainTransactionProcessor {
