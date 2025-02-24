@@ -5,7 +5,7 @@ use crate::{
         OnChainTransactionEvent, OnChainTransactionEventHandler,
         OnChainTransactionEventProcessorApi,
     },
-    persistence::block_height::BlockHeightStoreApi,
+    persistence::offset::OffsetStoreApi,
     Result,
 };
 use async_trait::async_trait;
@@ -13,7 +13,7 @@ use tokio::sync::Mutex;
 
 pub struct OnChainTransactionProcessor {
     node_id: String,
-    block_height_store: Box<dyn BlockHeightStoreApi>,
+    block_height_store: Box<dyn OffsetStoreApi>,
     handler: Box<dyn OnChainTransactionEventHandler>,
     current_block_height: Arc<Mutex<i32>>,
 }
@@ -21,7 +21,7 @@ pub struct OnChainTransactionProcessor {
 impl OnChainTransactionProcessor {
     pub fn new(
         node_id: &str,
-        block_height_store: Box<dyn BlockHeightStoreApi>,
+        block_height_store: Box<dyn OffsetStoreApi>,
         handler: Box<dyn OnChainTransactionEventHandler>,
     ) -> Self {
         Self {
@@ -38,14 +38,10 @@ impl OnChainTransactionEventProcessorApi for OnChainTransactionProcessor {
     fn node_id(&self) -> String {
         self.node_id.to_string()
     }
-    async fn get_block_height(&self) -> Result<i32> {
+    async fn get_offset(&self) -> Result<i32> {
         let mut current_block_height = self.current_block_height.lock().await;
         if *current_block_height < 0 {
-            *current_block_height = self
-                .block_height_store
-                .get_block_height(&self.node_id)
-                .await?
-                .block_height as i32;
+            *current_block_height = self.block_height_store.get_offset().await?.offset as i32;
         }
         Ok(*current_block_height)
     }
@@ -53,7 +49,7 @@ impl OnChainTransactionEventProcessorApi for OnChainTransactionProcessor {
         let mut current_block_height = self.current_block_height.lock().await;
         if *current_block_height < block_height {
             self.block_height_store
-                .set_block_height(&self.node_id, block_height as u64)
+                .set_offset(block_height as u64)
                 .await?;
             *current_block_height = block_height;
         }
