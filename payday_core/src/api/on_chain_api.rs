@@ -59,7 +59,7 @@ pub trait OnChainTransactionApi: Send + Sync {
 #[async_trait]
 pub trait OnChainTransactionEventProcessorApi: Send + Sync {
     fn node_id(&self) -> String;
-    async fn get_block_height(&self) -> Result<i32>;
+    async fn get_offset(&self) -> Result<i32>;
     async fn set_block_height(&self, block_height: i32) -> Result<()>;
     async fn process_event(&self, event: OnChainTransactionEvent) -> Result<()>;
 }
