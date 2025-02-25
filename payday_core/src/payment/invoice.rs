@@ -2,19 +2,18 @@ use std::fmt::{Display, Formatter};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use crate::payment::amount::Amount;
 
 pub type InvoiceId = String;
-pub type PaymentType = String;
 pub type Result<T> = std::result::Result<T, Error>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Error {
     InvalidAmount(Amount),
     InvalidCurrency(String, String),
     ServiceError(String),
+    InvoiceAlreadyExists(String),
 }
 
 impl std::error::Error for Error {}
@@ -29,17 +28,79 @@ impl Display for Error {
                 required, received
             ),
             Error::ServiceError(err) => write!(f, "Invoice service error: {}", err),
+            Error::InvoiceAlreadyExists(id) => write!(f, "Invoice already exists: {}", id),
         }
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PaymentType {
+    BitcoinOnChain,
+    BitcoinLightning,
+    BitcoinUnified,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Invoice {
-    pub service_name: String,
     pub invoice_id: InvoiceId,
-    pub amount: Amount,
+    pub node_id: String,
     pub payment_type: PaymentType,
-    pub payment_info: Value,
+    pub invoice_amount: Amount,
+    pub received_amount: Amount,
+    pub underpayment: bool,
+    pub overpayment: bool,
+    pub paid: bool,
+    pub details: Option<PaymentDetails>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum PaymentEvent {
+    PaymentUnconfirmed(PaymentReceivedEventPayload),
+    PaymentReceived(PaymentReceivedEventPayload),
+    UnexpectedPaymentReceived(UnexpectedPaymentReceivedEventPayload),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum PaymentDetails {
+    OnChain(OnChainPaymentDetais),
+    Lightning(LightningPaymentDetails),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PaymentReceivedEventPayload {
+    pub invoice_id: InvoiceId,
+    pub node_id: String,
+    pub payment_type: PaymentType,
+    pub invoice_amount: Amount,
+    pub received_amount: Amount,
+    pub underpayment: bool,
+    pub overpayment: bool,
+    pub paid: bool,
+    pub details: PaymentDetails,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnexpectedPaymentReceivedEventPayload {
+    pub node_id: String,
+    pub payment_type: PaymentType,
+    pub received_amount: Amount,
+    pub paid: bool,
+    pub details: PaymentDetails,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OnChainPaymentDetais {
+    pub address: String,
+    pub confirmations: u32,
+    pub transaction_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LightningPaymentDetails {
+    pub invoice: String,
+    pub r_hash: String,
 }
 
 #[async_trait]

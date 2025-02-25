@@ -105,6 +105,10 @@ impl Aggregate for LightningInvoice {
                 amount,
                 invoice,
             } => {
+                if !self.invoice_id.is_empty() {
+                    return Err(Error::InvoiceAlreadyExists(invoice_id));
+                }
+
                 if amount.currency != Currency::Btc {
                     return Err(Error::InvalidCurrency(
                         amount.currency.to_string(),
@@ -124,10 +128,13 @@ impl Aggregate for LightningInvoice {
                 }])
             }
             LightningInvoiceCommand::SettleInvoice { received_amount } => {
+                if self.paid {
+                    return Ok(vec![]);
+                }
                 Ok(vec![LightningInvoiceEvent::InvoiceSettled {
                     received_amount,
-                    overpaid: received_amount.amount > self.amount.amount,
-                    paid: received_amount.amount >= self.amount.amount,
+                    overpaid: received_amount.cent_amount > self.amount.cent_amount,
+                    paid: received_amount.cent_amount >= self.amount.cent_amount,
                 }])
             }
         }
@@ -158,5 +165,132 @@ impl Aggregate for LightningInvoice {
                 self.paid = paid;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use cqrs_es::test::TestFramework;
+
+    use super::*;
+
+    type LightningInvoiceTestFramework = TestFramework<LightningInvoice>;
+
+    #[test]
+    fn test_create_lightning_invoice() {
+        let expected_event = mock_created_event();
+        LightningInvoiceTestFramework::with(())
+            .given_no_previous_events()
+            .when(LightningInvoiceCommand::CreateInvoice {
+                invoice_id: "123".to_string(),
+                node_id: "node1".to_string(),
+                amount: Amount::sats(100_000),
+                invoice: get_invoice(),
+            })
+            .then_expect_events(vec![expected_event]);
+    }
+
+    #[test]
+    fn test_settle_lightning_invoice() {
+        let expected_event = mock_settled_event(Amount::sats(100_000), false, true);
+        LightningInvoiceTestFramework::with(())
+            .given(vec![mock_created_event()])
+            .when(LightningInvoiceCommand::SettleInvoice {
+                received_amount: Amount::sats(100_000),
+            })
+            .then_expect_events(vec![expected_event]);
+    }
+
+    #[test]
+    fn test_create_lightning_invoice_invalid_currency() {
+        let expected_error = Error::InvalidCurrency("USD".to_string(), "BTC".to_string());
+        LightningInvoiceTestFramework::with(())
+            .given_no_previous_events()
+            .when(LightningInvoiceCommand::CreateInvoice {
+                invoice_id: "123".to_string(),
+                node_id: "node1".to_string(),
+                amount: Amount::new(Currency::Usd, 100_000),
+                invoice: get_invoice(),
+            })
+            .then_expect_error(expected_error);
+    }
+
+    #[test]
+    fn test_settle_lightning_invoice_overpaid() {
+        let expected_event = mock_settled_event(Amount::sats(200_000), true, true);
+        LightningInvoiceTestFramework::with(())
+            .given(vec![mock_created_event()])
+            .when(LightningInvoiceCommand::SettleInvoice {
+                received_amount: Amount::sats(200_000),
+            })
+            .then_expect_events(vec![expected_event]);
+    }
+
+    #[test]
+    fn test_settle_lightning_invoice_underpaid() {
+        let expected_event = mock_settled_event(Amount::sats(50_000), false, false);
+        LightningInvoiceTestFramework::with(())
+            .given(vec![mock_created_event()])
+            .when(LightningInvoiceCommand::SettleInvoice {
+                received_amount: Amount::sats(50_000),
+            })
+            .then_expect_events(vec![expected_event]);
+    }
+    #[test]
+    fn test_create_lightning_invoice_already_exists() {
+        let expected_error = Error::InvoiceAlreadyExists("123".to_string());
+        LightningInvoiceTestFramework::with(())
+            .given(vec![mock_created_event()])
+            .when(LightningInvoiceCommand::CreateInvoice {
+                invoice_id: "123".to_string(),
+                node_id: "node1".to_string(),
+                amount: Amount::sats(100_000),
+                invoice: get_invoice(),
+            })
+            .then_expect_error(expected_error);
+    }
+
+    #[test]
+    fn test_set_confirmed_lightning_invoice_already_confirmed() {
+        LightningInvoiceTestFramework::with(())
+            .given(vec![
+                mock_created_event(),
+                mock_settled_event(Amount::sats(100_000), false, true),
+            ])
+            .when(LightningInvoiceCommand::SettleInvoice {
+                received_amount: Amount::sats(100_000),
+            })
+            .then_expect_events(vec![]);
+    }
+
+    fn mock_created_event() -> LightningInvoiceEvent {
+        let invoice = get_invoice();
+        LightningInvoiceEvent::InvoiceCreated {
+            invoice_id: "123".to_string(),
+            node_id: "node1".to_string(),
+            amount: Amount::sats(100_000),
+            invoice: invoice.to_string(),
+            r_hash: invoice.payment_hash().to_string(),
+        }
+    }
+
+    fn mock_settled_event(
+        received_amount: Amount,
+        overpaid: bool,
+        paid: bool,
+    ) -> LightningInvoiceEvent {
+        LightningInvoiceEvent::InvoiceSettled {
+            received_amount,
+            overpaid,
+            paid,
+        }
+    }
+
+    fn get_invoice() -> Bolt11Invoice {
+        Bolt11Invoice::from_str(
+            "lntbs3m1pnf36h3pp5dm63f7meus5thxd3h23uqkfuydw340nrf6v8y398ga7tqjfrpnfsdq5w3jhxapqd9h8vmmfvdjscqzzsxq97ztucsp5yle6azm0tpy7h3dh0d6kmpzzzpyvzqkck476l96z5p5leqaraumq9qyyssqghpt4k54rrutwumlq6hav5wdjghlrxnyxe5dde37e5t4wwz4kkq3r5284l3rcnyzzqvry6xz4s8mq42npq8fzr7j9tvvuyh32xmh97gq0h8hdp"
+        ).expect("valid invoice")
     }
 }

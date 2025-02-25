@@ -99,7 +99,7 @@ impl LightningInvoiceApi for Lnd {
         memo: Option<String>,
         ttl: Option<i64>,
     ) -> Result<LnInvoice> {
-        let amount = bitcoin::Amount::from_sat(amount.amount);
+        let amount = bitcoin::Amount::from_sat(amount.cent_amount);
         let invoice = self.client.create_invoice(amount, memo, ttl).await?;
         Ok(invoice)
     }
@@ -170,7 +170,7 @@ impl OnChainPaymentApi for Lnd {
 #[async_trait]
 impl LightningPaymentApi for Lnd {
     async fn pay_to_node_pub_key(&self, pub_key: String, amount: Amount) -> Result<()> {
-        let amt = bitcoin::Amount::from_sat(amount.amount);
+        let amt = bitcoin::Amount::from_sat(amount.cent_amount);
         self.client
             .pay_to_node_id(pub_key.parse()?, amt, None)
             .await?;
