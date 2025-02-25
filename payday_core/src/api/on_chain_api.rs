@@ -58,9 +58,8 @@ pub trait OnChainTransactionApi: Send + Sync {
 
 #[async_trait]
 pub trait OnChainTransactionEventProcessorApi: Send + Sync {
-    fn node_id(&self) -> String;
-    async fn get_offset(&self) -> Result<u64>;
-    async fn set_block_height(&self, block_height: u64) -> Result<()>;
+    async fn get_offset(&self, id: &str) -> Result<u64>;
+    async fn set_block_height(&self, id: &str, block_height: u64) -> Result<()>;
     async fn process_event(&self, event: OnChainTransactionEvent) -> Result<()>;
 }
 
@@ -71,6 +70,8 @@ pub trait OnChainTransactionEventHandler: Send + Sync {
 
 #[async_trait]
 pub trait OnChainTransactionStreamApi: Send + Sync {
+    fn node_id(&self) -> String;
+
     async fn subscribe_on_chain_transactions(
         &self,
         sender: Sender<OnChainTransactionEvent>,
@@ -106,6 +107,15 @@ impl OnChainTransactionEvent {
             OnChainTransactionEvent::ReceivedConfirmed(tx) => Some(tx.block_height),
             OnChainTransactionEvent::SentConfirmed(tx) => Some(tx.block_height),
             _ => None,
+        }
+    }
+
+    pub fn node_id(&self) -> String {
+        match self {
+            OnChainTransactionEvent::ReceivedUnconfirmed(tx) => tx.node_id.to_owned(),
+            OnChainTransactionEvent::ReceivedConfirmed(tx) => tx.node_id.to_owned(),
+            OnChainTransactionEvent::SentUnconfirmed(tx) => tx.node_id.to_owned(),
+            OnChainTransactionEvent::SentConfirmed(tx) => tx.node_id.to_owned(),
         }
     }
 }

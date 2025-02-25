@@ -1,5 +1,11 @@
 [workspace]
-members = ["payday_axum", "payday_core", "payday_node_lnd", "payday_postgres"]
+members = [
+  "payday_axum",
+  "payday_core",
+  "payday_monitor",
+  "payday_node_lnd",
+  "payday_postgres",
+]
 
 [workspace.dependencies]
 async-trait = "0.1.86"

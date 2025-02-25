@@ -51,9 +51,8 @@ pub trait LightningTransactionStreamApi: Send + Sync {
 
 #[async_trait]
 pub trait LightningTransactionEventProcessorApi: Send + Sync {
-    fn node_id(&self) -> String;
-    async fn get_offset(&self) -> Result<u64>;
-    async fn set_offset(&self, settle_index: u64) -> Result<()>;
+    async fn get_offset(&self, id: &str) -> Result<u64>;
+    async fn set_offset(&self, id: &str, settle_index: u64) -> Result<()>;
     async fn process_event(&self, event: LightningTransactionEvent) -> Result<()>;
 }
 
@@ -101,6 +100,12 @@ impl LightningTransactionEvent {
     pub fn settle_index(&self) -> Option<u64> {
         match self {
             LightningTransactionEvent::Settled(tx) => Some(tx.settle_index),
+        }
+    }
+
+    pub fn node_id(&self) -> String {
+        match self {
+            LightningTransactionEvent::Settled(tx) => tx.node_id.to_owned(),
         }
     }
 }

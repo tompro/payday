@@ -230,6 +230,9 @@ impl LndPaymentEventStream {
 
 #[async_trait]
 impl OnChainTransactionStreamApi for LndPaymentEventStream {
+    fn node_id(&self) -> String {
+        self.config.node_id.to_owned()
+    }
     async fn subscribe_on_chain_transactions(
         &self,
         sender: Sender<OnChainTransactionEvent>,

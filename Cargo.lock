@@ -1814,6 +1814,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "payday_monitor"
+version = "0.1.0"
+dependencies = [
+ "payday_core",
+ "payday_node_lnd",
+ "payday_postgres",
+ "postgres-es",
+ "sqlx",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "payday_node_lnd"
 version = "0.1.0"
 dependencies = [
