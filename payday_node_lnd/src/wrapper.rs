@@ -4,7 +4,7 @@
 //! handles connection and network checks, maps errors to project
 //! specific errors, and provides a convenient interface for the
 //! operations needed for invoicing.
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
 
 use crate::to_address;
 use bitcoin::{hex::DisplayHex, Address, Amount, Network, PublicKey};
@@ -215,7 +215,7 @@ impl LndRpcWrapper {
             .into_inner();
 
         Ok(LnInvoice {
-            invoice: invoice.payment_request,
+            invoice: Bolt11Invoice::from_str(&invoice.payment_request)?,
             r_hash: invoice.r_hash.as_hex().to_string(),
             add_index: invoice.add_index,
         })

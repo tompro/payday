@@ -1,10 +1,6 @@
 use crate::{
     api::on_chain_api::OnChainTransactionEvent,
-    payment::{
-        amount::Amount,
-        currency::Currency,
-        invoice::{Error, InvoiceId},
-    },
+    payment::{amount::Amount, currency::Currency, invoice::InvoiceId, Error},
 };
 use async_trait::async_trait;
 use cqrs_es::{Aggregate, DomainEvent};

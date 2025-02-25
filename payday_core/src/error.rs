@@ -2,20 +2,20 @@ use bitcoin::address::ParseError;
 use bitcoin::amount::ParseAmountError;
 use bitcoin::network::ParseNetworkError;
 
-use crate::events::MessageError;
-
 #[derive(Debug)]
 pub enum Error {
     NodeConnectError(String),
     NodeApiError(String),
     LightningPaymentFailed(String),
     InvalidInvoiceState(String),
+    InvalidLightningInvoice(String),
     PublicKey(String),
     DbError(String),
     InvalidBitcoinAddress(String),
     InvalidBitcoinNetwork(String),
     InvalidBitcoinAmount(String),
     EventError(String),
+    InvalidPaymentType(String),
 }
 
 impl From<ParseNetworkError> for Error {
@@ -41,18 +41,8 @@ impl From<bitcoin::key::ParsePublicKeyError> for Error {
     }
 }
 
-impl From<MessageError> for Error {
-    fn from(value: MessageError) -> Self {
-        match value {
-            MessageError::PublishError(m) => {
-                Error::EventError(format!("unable to publish event: {}", m))
-            }
-            MessageError::SubscribeError(m) => {
-                Error::EventError(format!("unable to subscribe event stream: {}", m))
-            }
-            MessageError::ConfirmError(m) => {
-                Error::EventError(format!("unable to confirm event processing: {}", m))
-            }
-        }
+impl From<lightning_invoice::ParseOrSemanticError> for Error {
+    fn from(value: lightning_invoice::ParseOrSemanticError) -> Self {
+        Error::InvalidLightningInvoice(value.to_string())
     }
 }

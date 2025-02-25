@@ -64,7 +64,7 @@ pub trait LightningTransactionEventHandler: Send + Sync {
 
 #[derive(Debug, Clone)]
 pub struct LnInvoice {
-    pub invoice: String,
+    pub invoice: Bolt11Invoice,
     pub r_hash: String,
     pub add_index: u64,
 }

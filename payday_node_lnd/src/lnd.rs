@@ -35,7 +35,7 @@ const LND_SETTLED: i32 = 1;
 
 #[derive(Clone)]
 pub struct Lnd {
-    config: LndConfig,
+    pub(super) config: LndConfig,
     client: LndRpcWrapper,
 }
 
