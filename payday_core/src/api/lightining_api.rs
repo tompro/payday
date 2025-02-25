@@ -49,6 +49,19 @@ pub trait LightningTransactionStreamApi: Send + Sync {
     ) -> Result<JoinHandle<()>>;
 }
 
+#[async_trait]
+pub trait LightningTransactionEventProcessorApi: Send + Sync {
+    fn node_id(&self) -> String;
+    async fn get_offset(&self) -> Result<u64>;
+    async fn set_offset(&self, settle_index: u64) -> Result<()>;
+    async fn process_event(&self, event: LightningTransactionEvent) -> Result<()>;
+}
+
+#[async_trait]
+pub trait LightningTransactionEventHandler: Send + Sync {
+    async fn process_event(&self, event: LightningTransactionEvent) -> Result<()>;
+}
+
 #[derive(Debug, Clone)]
 pub struct LnInvoice {
     pub invoice: String,
@@ -82,6 +95,14 @@ pub struct LightningTransaction {
 #[derive(Debug, Clone)]
 pub enum LightningTransactionEvent {
     Settled(LightningTransaction),
+}
+
+impl LightningTransactionEvent {
+    pub fn settle_index(&self) -> Option<u64> {
+        match self {
+            LightningTransactionEvent::Settled(tx) => Some(tx.settle_index),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
