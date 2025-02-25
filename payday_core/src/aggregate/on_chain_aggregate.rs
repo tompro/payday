@@ -169,11 +169,17 @@ impl Aggregate for OnChainInvoice {
                 amount,
                 address,
             } => {
+                // invalid currency
                 if amount.currency != Currency::Btc {
                     return Err(Error::InvalidCurrency(
                         amount.currency.to_string(),
                         Currency::Btc.to_string(),
                     ));
+                }
+
+                // invoice already exists
+                if !self.invoice_id.is_empty() {
+                    return Err(Error::InvoiceAlreadyExists(invoice_id));
                 }
 
                 Ok(vec![OnChainInvoiceEvent::InvoiceCreated {
@@ -184,23 +190,35 @@ impl Aggregate for OnChainInvoice {
                 }])
             }
             OnChainInvoiceCommand::SetPending { amount } => {
+                // already payd or pending
+                if self.received_amount.cent_amount > 0 {
+                    return Ok(Vec::new());
+                }
+
                 Ok(vec![OnChainInvoiceEvent::PaymentPending {
                     received_amount: amount,
-                    underpayment: amount.amount < self.amount.amount,
-                    overpayment: amount.amount > self.amount.amount,
+                    underpayment: amount.cent_amount < self.amount.cent_amount,
+                    overpayment: amount.cent_amount > self.amount.cent_amount,
                 }])
             }
             OnChainInvoiceCommand::SetConfirmed {
                 confirmations,
                 amount,
                 transaction_id,
-            } => Ok(vec![OnChainInvoiceEvent::PaymentConfirmed {
-                received_amount: amount,
-                underpayment: amount.amount < self.amount.amount,
-                overpayment: amount.amount > self.amount.amount,
-                confirmations,
-                transaction_id,
-            }]),
+            } => {
+                // already confirmed
+                if self.confirmations > 0 {
+                    return Ok(Vec::new());
+                }
+
+                Ok(vec![OnChainInvoiceEvent::PaymentConfirmed {
+                    received_amount: amount,
+                    underpayment: amount.cent_amount < self.amount.cent_amount,
+                    overpayment: amount.cent_amount > self.amount.cent_amount,
+                    confirmations,
+                    transaction_id,
+                }])
+            }
         }
     }
 
@@ -261,7 +279,7 @@ mod aggregate_tests {
             .when(OnChainInvoiceCommand::CreateInvoice {
                 invoice_id: "123".to_string(),
                 node_id: "node1".to_string(),
-                amount: amount_fn(100_000),
+                amount: Amount::sats(100_000),
                 address: "tb1q6xm2qgh5r83lvmmu0v7c3d4wrd9k2uxu3sgcr4".to_string(),
             })
             .then_expect_events(vec![expected])
@@ -269,8 +287,8 @@ mod aggregate_tests {
 
     #[test]
     fn test_set_pending() {
-        let amount = amount_fn(100_000);
-        let expected = mock_pending_event(amount.amount, false, false);
+        let amount = Amount::sats(100_000);
+        let expected = mock_pending_event(amount.cent_amount, false, false);
         OnChainInvoiceTestFramework::with(())
             .given(vec![mock_created_event(100_000)])
             .when(OnChainInvoiceCommand::SetPending { amount })
@@ -279,8 +297,8 @@ mod aggregate_tests {
 
     #[test]
     fn test_pending_overpayment() {
-        let amount = amount_fn(100_001);
-        let expected = mock_pending_event(amount.amount, false, true);
+        let amount = Amount::sats(100_001);
+        let expected = mock_pending_event(amount.cent_amount, false, true);
         OnChainInvoiceTestFramework::with(())
             .given(vec![mock_created_event(100_000)])
             .when(OnChainInvoiceCommand::SetPending { amount })
@@ -289,8 +307,8 @@ mod aggregate_tests {
 
     #[test]
     fn test_pending_underpayment() {
-        let amount = amount_fn(99_999);
-        let expected = mock_pending_event(amount.amount, true, false);
+        let amount = Amount::sats(99_999);
+        let expected = mock_pending_event(amount.cent_amount, true, false);
         OnChainInvoiceTestFramework::with(())
             .given(vec![mock_created_event(100_000)])
             .when(OnChainInvoiceCommand::SetPending { amount })
@@ -300,7 +318,7 @@ mod aggregate_tests {
     #[test]
     fn test_set_confirmed() {
         let expected = OnChainInvoiceEvent::PaymentConfirmed {
-            received_amount: Amount::new(Currency::Btc, 100_000),
+            received_amount: Amount::sats(100_000),
             underpayment: false,
             overpayment: false,
             confirmations: 1,
@@ -310,14 +328,55 @@ mod aggregate_tests {
             .given(vec![mock_created_event(100_000)])
             .when(OnChainInvoiceCommand::SetConfirmed {
                 confirmations: 1,
-                amount: Amount::new(Currency::Btc, 100_000),
+                amount: Amount::sats(100_000),
                 transaction_id: "txid".to_string(),
             })
             .then_expect_events(vec![expected])
     }
 
-    fn amount_fn(amount: u64) -> Amount {
-        Amount::new(Currency::Btc, amount)
+    #[test]
+    fn test_create_invoice_already_exists() {
+        let expected_error = Error::InvoiceAlreadyExists("123".to_string());
+        OnChainInvoiceTestFramework::with(())
+            .given(vec![mock_created_event(100_000)])
+            .when(OnChainInvoiceCommand::CreateInvoice {
+                invoice_id: "123".to_string(),
+                node_id: "node1".to_string(),
+                amount: Amount::sats(100_000),
+                address: "tb1q6xm2qgh5r83lvmmu0v7c3d4wrd9k2uxu3sgcr4".to_string(),
+            })
+            .then_expect_error(expected_error);
+    }
+
+    #[test]
+    fn test_set_pending_already_pending() {
+        let amount = Amount::sats(100_000);
+        OnChainInvoiceTestFramework::with(())
+            .given(vec![
+                mock_created_event(100_000),
+                mock_pending_event(100_000, false, false),
+            ])
+            .when(OnChainInvoiceCommand::SetPending { amount })
+            .then_expect_events(vec![]);
+    }
+
+    #[test]
+    fn test_set_confirmed_already_confirmed() {
+        let expected = OnChainInvoiceEvent::PaymentConfirmed {
+            received_amount: Amount::new(Currency::Btc, 100_000),
+            underpayment: false,
+            overpayment: false,
+            confirmations: 1,
+            transaction_id: "txid".to_string(),
+        };
+        OnChainInvoiceTestFramework::with(())
+            .given(vec![mock_created_event(100_000), expected.clone()])
+            .when(OnChainInvoiceCommand::SetConfirmed {
+                confirmations: 1,
+                amount: Amount::new(Currency::Btc, 100_000),
+                transaction_id: "txid".to_string(),
+            })
+            .then_expect_events(vec![]);
     }
 
     fn mock_pending_event(
@@ -326,7 +385,7 @@ mod aggregate_tests {
         overpayment: bool,
     ) -> OnChainInvoiceEvent {
         OnChainInvoiceEvent::PaymentPending {
-            received_amount: amount_fn(amount),
+            received_amount: Amount::sats(amount),
             underpayment,
             overpayment,
         }
@@ -336,7 +395,7 @@ mod aggregate_tests {
         OnChainInvoiceEvent::InvoiceCreated {
             invoice_id: "123".to_string(),
             node_id: "node1".to_string(),
-            amount: amount_fn(amount),
+            amount: Amount::sats(amount),
             address: "tb1q6xm2qgh5r83lvmmu0v7c3d4wrd9k2uxu3sgcr4".to_string(),
         }
     }

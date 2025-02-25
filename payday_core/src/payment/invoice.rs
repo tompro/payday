@@ -10,11 +10,12 @@ pub type InvoiceId = String;
 pub type PaymentType = String;
 pub type Result<T> = std::result::Result<T, Error>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Error {
     InvalidAmount(Amount),
     InvalidCurrency(String, String),
     ServiceError(String),
+    InvoiceAlreadyExists(String),
 }
 
 impl std::error::Error for Error {}
@@ -29,6 +30,7 @@ impl Display for Error {
                 required, received
             ),
             Error::ServiceError(err) => write!(f, "Invoice service error: {}", err),
+            Error::InvoiceAlreadyExists(id) => write!(f, "Invoice already exists: {}", id),
         }
     }
 }
