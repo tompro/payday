@@ -5,10 +5,11 @@ edition = "2021"
 
 [dependencies]
 payday_core = { path = "../payday_core" }
-fedimint-tonic-lnd = "0.2.0"
+fedimint-tonic-lnd = { git = "https://github.com/tompro/tonic_lnd.git" }
 async-trait.workspace = true
 bitcoin.workspace = true
 tokio-stream.workspace = true
 cqrs-es.workspace = true
 tokio.workspace = true
 lightning-invoice.workspace = true
+tracing.workspace = true

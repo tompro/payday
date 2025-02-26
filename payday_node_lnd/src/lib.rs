@@ -27,7 +27,7 @@ pub fn to_address(addr: &str, network: Network) -> Result<Address> {
 #[async_trait]
 impl NodeApi for Lnd {
     fn node_id(&self) -> String {
-        self.config.node_id.to_owned()
+        self.node_id.to_owned()
     }
 
     fn supports_payment_types(&self, payment_type: PaymentType) -> bool {
