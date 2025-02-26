@@ -5,13 +5,13 @@ edition = "2021"
 
 [dependencies]
 payday_core = { path = "../payday_core" }
-async-trait = { workspace = true }
-cqrs-es = { workspace = true }
-sqlx = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-tokio = { workspace = true }
-postgres-es = { version = "0.4.11" }
+async-trait.workspace = true
+cqrs-es.workspace = true
+postgres-es.workspace = true
+sqlx.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
 
 [dev-dependencies]
 testcontainers = { version = "0.23" }

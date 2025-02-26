@@ -254,27 +254,34 @@ impl LndConfig {
 
 pub struct LndPaymentEventStream {
     config: LndConfig,
+    node_id: String,
 }
 
 impl LndPaymentEventStream {
     pub fn new(config: LndConfig) -> Self {
-        Self { config }
+        let node_id = config.node_id();
+        Self { config, node_id }
     }
 
     /// does fetch potential missing events from the current start_height
-    async fn start_subscription(&self, start_height: i32) -> Result<Vec<OnChainTransactionEvent>> {
+    async fn start_subscription(&self, start_height: u64) -> Result<Vec<OnChainTransactionEvent>> {
         let lnd = Lnd::new(self.config.clone()).await?;
-        let events = lnd.get_onchain_transactions(start_height, -1).await?;
+        let events = lnd
+            .get_onchain_transactions(start_height as i32, -1)
+            .await?;
         Ok(events)
     }
 }
 
 #[async_trait]
 impl OnChainTransactionStreamApi for LndPaymentEventStream {
+    fn node_id(&self) -> String {
+        self.node_id.to_owned()
+    }
     async fn subscribe_on_chain_transactions(
         &self,
         sender: Sender<OnChainTransactionEvent>,
-        start_height: Option<i32>,
+        start_height: Option<u64>,
     ) -> Result<JoinHandle<()>> {
         let config = self.config.clone();
         let start_events = self
@@ -310,7 +317,7 @@ impl OnChainTransactionStreamApi for LndPaymentEventStream {
                     if let Ok(events) = to_on_chain_events(&event, network, &node_id) {
                         for event in events {
                             if let Err(e) = sender.send(event).await {
-                                println!("Failed to send on chain transaction event: {:?}", e);
+                                error!("Failed to send on chain transaction event: {:?}", e);
                             }
                         }
                     }
@@ -445,7 +452,7 @@ pub(crate) async fn create_client(config: LndConfig) -> Result<Client> {
             address, macaroon, ..
         } => fedimint_tonic_lnd::connect_root(address.to_string(), macaroon.to_string())
             .await
-            .map_err(|e| Error::NodeConnectError(e.to_string()))?,
+            .map_err(|e| Error::NodeConnect(e.to_string()))?,
         LndConfig::CertPath {
             address,
             cert_path,
@@ -457,7 +464,7 @@ pub(crate) async fn create_client(config: LndConfig) -> Result<Client> {
             macaroon_file.to_string(),
         )
         .await
-        .map_err(|e| Error::NodeConnectError(e.to_string()))?,
+        .map_err(|e| Error::NodeConnect(e.to_string()))?,
     };
     Ok(lnd)
 }
