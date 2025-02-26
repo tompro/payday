@@ -6,7 +6,7 @@
 //! operations needed for invoicing.
 use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
 
-use crate::to_address;
+use crate::{lnd::create_client, to_address};
 use bitcoin::{hex::DisplayHex, Address, Amount, Network, PublicKey};
 use fedimint_tonic_lnd::{
     lnrpc::{
@@ -25,21 +25,16 @@ use crate::lnd::LndConfig;
 
 #[derive(Clone)]
 pub struct LndRpcWrapper {
-    config: LndConfig,
     client: Arc<Mutex<Client>>,
+    node_id: String,
+    network: Network,
 }
 
 impl LndRpcWrapper {
     /// Create a new LND RPC wrapper. Creates an RPC connection and
     /// checks whether the RPC server is serving the expected network.
     pub async fn new(config: LndConfig) -> Result<Self> {
-        let mut lnd: Client = fedimint_tonic_lnd::connect(
-            config.address.to_string(),
-            config.cert_path.to_string(),
-            config.macaroon_file.to_string(),
-        )
-        .await
-        .map_err(|e| Error::NodeConnectError(e.to_string()))?;
+        let mut lnd = create_client(config.clone()).await?;
 
         let network_info = lnd
             .lightning()
@@ -53,19 +48,22 @@ impl LndRpcWrapper {
             .network
             .to_string();
 
-        if config.network != network_from_str(&network_info)? {
+        let node_id = config.node_id();
+        let network = config.network();
+        if network != network_from_str(&network_info)? {
             return Err(Error::InvalidBitcoinNetwork(network_info));
         }
         Ok(Self {
-            config,
             client: Arc::new(Mutex::new(lnd)),
+            node_id,
+            network,
         })
     }
 
     /// Get the unique name of the LND server. Names are used to
     /// identify the server in logs and associated addresses and invoices.
     pub fn get_name(&self) -> String {
-        self.config.node_id.to_string()
+        self.node_id.to_string()
     }
 
     async fn client(&self) -> MutexGuard<Client> {
@@ -113,7 +111,7 @@ impl LndRpcWrapper {
             .map_err(|e| Error::NodeApiError(e.to_string()))?
             .into_inner()
             .address;
-        let address = to_address(&addr, self.config.network)?;
+        let address = to_address(&addr, self.network)?;
         Ok(address)
     }
 
@@ -125,7 +123,7 @@ impl LndRpcWrapper {
         address: &str,
         sats_per_vbyte: Amount,
     ) -> Result<String> {
-        let checked_address = to_address(address, self.config.network)?;
+        let checked_address = to_address(address, self.network)?;
         let txid = self
             .client()
             .await
