@@ -1,15 +1,15 @@
 pub mod btc_onchain;
 pub mod offset;
 
-use cqrs_es::{Aggregate, Query};
+use cqrs_es::{persist::PersistedEventStore, Aggregate, CqrsFramework, Query};
 use payday_core::{persistence::cqrs::Cqrs, Error, Result};
-use postgres_es::{postgres_cqrs, PostgresEventRepository};
+use postgres_es::PostgresEventRepository;
 use sqlx::{Pool, Postgres};
 
 pub async fn create_postgres_pool(connection_string: &str) -> Result<Pool<Postgres>> {
     let pool = sqlx::PgPool::connect(connection_string)
         .await
-        .map_err(|e| Error::DbError(e.to_string()))?;
+        .map_err(|e| Error::Db(e.to_string()))?;
     Ok(pool)
 }
 
@@ -18,7 +18,7 @@ pub async fn init_tables(pool: Pool<Postgres>) -> Result<()> {
     sqlx::raw_sql(sql)
         .execute(&pool)
         .await
-        .map_err(|e| Error::DbError(e.to_string()))?;
+        .map_err(|e| Error::Db(e.to_string()))?;
     Ok(())
 }
 
@@ -30,8 +30,10 @@ pub async fn create_cqrs<A>(
 where
     A: Aggregate,
 {
-    let cqrs = postgres_cqrs(pool, queries, services);
-    Ok(cqrs)
+    //let cqrs = postgres_cqrs(pool, queries, services);
+    let repo = PostgresEventRepository::new(pool).with_tables("payday.events", "payday.snapshots");
+    let store = PersistedEventStore::new_event_store(repo);
+    Ok(CqrsFramework::new(store, queries, services))
 }
 
 #[cfg(test)]

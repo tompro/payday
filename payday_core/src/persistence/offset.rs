@@ -5,8 +5,8 @@ use crate::Result;
 
 #[async_trait]
 pub trait OffsetStoreApi: Send + Sync {
-    async fn get_offset(&self) -> Result<Offset>;
-    async fn set_offset(&self, offset: u64) -> Result<()>;
+    async fn get_offset(&self, id: &str) -> Result<Offset>;
+    async fn set_offset(&self, id: &str, offset: u64) -> Result<()>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
