@@ -9,6 +9,7 @@ use crate::{
     Result,
 };
 use async_trait::async_trait;
+use tracing::info;
 
 pub struct OnChainTransactionProcessor {
     block_height_store: Box<dyn OffsetStoreApi>,
@@ -43,20 +44,15 @@ impl OnChainTransactionEventProcessorApi for OnChainTransactionProcessor {
     async fn process_event(&self, event: OnChainTransactionEvent) -> Result<()> {
         let block_height = event.block_height();
         let node_id = event.node_id();
+        info!(
+            "Processing on-chain event from node: {} with block_height {}",
+            node_id,
+            block_height.unwrap_or(0)
+        );
         self.handler.process_event(event).await?;
         if let Some(bh) = block_height {
             self.set_block_height(&node_id, bh as u64).await?;
         }
-        Ok(())
-    }
-}
-
-pub struct OnChainTransactionPrintHandler;
-
-#[async_trait]
-impl OnChainTransactionEventHandler for OnChainTransactionPrintHandler {
-    async fn process_event(&self, event: OnChainTransactionEvent) -> Result<()> {
-        println!("OnChainEventTransactionEvent: {:?}", event);
         Ok(())
     }
 }

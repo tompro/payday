@@ -221,9 +221,11 @@ impl LndPaymentEventStream {
     }
 
     /// does fetch potential missing events from the current start_height
-    async fn start_subscription(&self, start_height: i32) -> Result<Vec<OnChainTransactionEvent>> {
+    async fn start_subscription(&self, start_height: u64) -> Result<Vec<OnChainTransactionEvent>> {
         let lnd = Lnd::new(self.config.clone()).await?;
-        let events = lnd.get_onchain_transactions(start_height, -1).await?;
+        let events = lnd
+            .get_onchain_transactions(start_height as i32, -1)
+            .await?;
         Ok(events)
     }
 }
@@ -236,7 +238,7 @@ impl OnChainTransactionStreamApi for LndPaymentEventStream {
     async fn subscribe_on_chain_transactions(
         &self,
         sender: Sender<OnChainTransactionEvent>,
-        start_height: Option<i32>,
+        start_height: Option<u64>,
     ) -> Result<JoinHandle<()>> {
         let config = self.config.clone();
         let start_events = self
@@ -277,7 +279,7 @@ impl OnChainTransactionStreamApi for LndPaymentEventStream {
                 if let Ok(events) = to_on_chain_events(&event, config.network, &config.node_id) {
                     for event in events {
                         if let Err(e) = sender.send(event).await {
-                            println!("Failed to send on chain transaction event: {:?}", e);
+                            println!("Failed to send on chain transaction event: {}", e);
                         }
                     }
                 }

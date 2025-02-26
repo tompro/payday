@@ -1786,6 +1786,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "payday"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "bitcoin",
+ "payday_core",
+ "payday_node_lnd",
+ "payday_postgres",
+ "postgres-es",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "payday_axum"
 version = "0.1.0"
 dependencies = [
@@ -1811,18 +1828,6 @@ dependencies = [
  "serde_json",
  "tokio",
  "tokio-stream",
-]
-
-[[package]]
-name = "payday_monitor"
-version = "0.1.0"
-dependencies = [
- "payday_core",
- "payday_node_lnd",
- "payday_postgres",
- "postgres-es",
- "sqlx",
- "tokio",
  "tracing",
 ]
 

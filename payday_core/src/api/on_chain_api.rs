@@ -75,7 +75,7 @@ pub trait OnChainTransactionStreamApi: Send + Sync {
     async fn subscribe_on_chain_transactions(
         &self,
         sender: Sender<OnChainTransactionEvent>,
-        start_height: Option<i32>,
+        start_height: Option<u64>,
     ) -> Result<JoinHandle<()>>;
 }
 

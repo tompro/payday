@@ -1,8 +1,10 @@
 [workspace]
+resolver = "3"
+
 members = [
   "payday_axum",
   "payday_core",
-  "payday_monitor",
+  "payday",
   "payday_node_lnd",
   "payday_postgres",
 ]
@@ -21,5 +23,6 @@ sqlx = { version = "0.8", features = ["postgres", "json"] }
 futures = "0.3.30"
 lightning-invoice = { version = "0.33.1", features = ["serde"] }
 tracing = "0.1"
-tracing-subscriber = "0.3.18"
+tracing-subscriber = "0.3.19"
 thiserror = "2"
+anyhow = "1"

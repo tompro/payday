@@ -11,24 +11,52 @@ use tokio::sync::Mutex;
 pub struct OffsetStore {
     db: Pool<Postgres>,
     current_offset: Mutex<HashMap<String, u64>>,
+    prefix: Option<String>,
+    table_name: String,
 }
 
 impl OffsetStore {
-    pub fn new(db: Pool<Postgres>) -> Self {
+    pub fn new(db: Pool<Postgres>, table_name: Option<String>, id_prefix: Option<String>) -> Self {
         Self {
             db,
             current_offset: Mutex::new(HashMap::new()),
+            prefix: id_prefix,
+            table_name: table_name.unwrap_or("offsets".to_owned()),
+        }
+    }
+
+    fn with_prefix(&self, id: &str) -> String {
+        match &self.prefix {
+            Some(prefix) => format!("{}:{}", prefix, id),
+            None => id.to_owned(),
         }
     }
 
     async fn get_cached(&self, id: &str) -> Option<u64> {
         let cached = self.current_offset.lock().await;
-        cached.get(id).copied()
+        cached.get(&self.with_prefix(id)).copied()
     }
 
     async fn set_cached(&self, id: &str, offset: u64) {
+        if offset <= self.get_cached(id).await.unwrap_or(0) {
+            return;
+        }
         let mut cached = self.current_offset.lock().await;
-        cached.insert(id.to_owned(), offset);
+        cached.insert(self.with_prefix(id), offset);
+    }
+
+    fn select_query(&self) -> String {
+        format!(
+            "SELECT current_offset FROM {} WHERE id = $1",
+            self.table_name
+        )
+    }
+
+    fn upsert_query(&self) -> String {
+        format!(
+            "INSERT INTO {} (id, current_offset) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET current_offset = $2",
+            self.table_name
+        )
     }
 
     async fn get_offset_internal(&self, id: &str) -> Result<Option<u64>> {
@@ -36,11 +64,11 @@ impl OffsetStore {
         if let Some(cached) = cached {
             return Ok(Some(cached));
         }
-        let res: Option<i64> = sqlx::query("SELECT current_offset FROM offsets WHERE id = $1")
-            .bind(id)
+        let res: Option<i64> = sqlx::query(self.select_query().as_str())
+            .bind(self.with_prefix(id))
             .fetch_optional(&self.db)
             .await
-            .map_err(|e| Error::DbError(e.to_string()))?
+            .map_err(|e| Error::Db(e.to_string()))?
             .map(|r| r.get("current_offset"));
 
         match res.and_then(|r| u64::try_from(r).ok()) {
@@ -54,20 +82,13 @@ impl OffsetStore {
 
     async fn set_offset_internal(&self, id: &str, offset: u64) -> Result<()> {
         let existing: Option<u64> = self.get_offset_internal(id).await?;
-        if existing.is_some() {
-            sqlx::query("UPDATE offsets SET current_offset = $1 WHERE id = $2")
-                .bind(offset as i64)
-                .bind(id)
-                .execute(&self.db)
-                .await
-                .map_err(|e| Error::DbError(e.to_string()))?;
-        } else {
-            sqlx::query("INSERT INTO offsets (id, current_offset) VALUES ($1, $2)")
-                .bind(id)
+        if existing.is_none_or(|v| v <= offset) {
+            sqlx::query(self.upsert_query().as_str())
+                .bind(self.with_prefix(id))
                 .bind(offset as i64)
                 .execute(&self.db)
                 .await
-                .map_err(|e| Error::DbError(e.to_string()))?;
+                .map_err(|e| Error::Db(e.to_string()))?;
         }
         self.set_cached(id, offset).await;
         Ok(())
@@ -103,7 +124,7 @@ mod tests {
     #[tokio::test]
     async fn test_get_set_offset_non_existant() {
         let db = get_postgres_pool().await;
-        let store = OffsetStore::new(db);
+        let store = OffsetStore::new(db, None, None);
         let result = store
             .get_offset("test_get_set_offset_non_existant")
             .await
@@ -115,7 +136,7 @@ mod tests {
     async fn test_get_set_offset() {
         let id = "test_get_set_offset";
         let db = get_postgres_pool().await;
-        let store = OffsetStore::new(db);
+        let store = OffsetStore::new(db, None, None);
         store
             .set_offset(id, 10)
             .await

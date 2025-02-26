@@ -39,13 +39,13 @@ impl LndRpcWrapper {
             config.macaroon_file.to_string(),
         )
         .await
-        .map_err(|e| Error::NodeConnectError(e.to_string()))?;
+        .map_err(|e| Error::NodeConnect(e.to_string()))?;
 
         let network_info = lnd
             .lightning()
             .get_info(GetInfoRequest {})
             .await
-            .map_err(|e| Error::NodeApiError(e.to_string()))?
+            .map_err(|e| Error::NodeApi(e.to_string()))?
             .into_inner()
             .chains
             .first()
@@ -78,7 +78,7 @@ impl LndRpcWrapper {
             .lightning()
             .wallet_balance(WalletBalanceRequest {})
             .await
-            .map_err(|e| Error::NodeApiError(e.to_string()))?
+            .map_err(|e| Error::NodeApi(e.to_string()))?
             .into_inner())
     }
 
@@ -88,7 +88,7 @@ impl LndRpcWrapper {
             .lightning()
             .channel_balance(ChannelBalanceRequest {})
             .await
-            .map_err(|e| Error::NodeApiError(e.to_string()))?
+            .map_err(|e| Error::NodeApi(e.to_string()))?
             .into_inner())
     }
 
@@ -110,7 +110,7 @@ impl LndRpcWrapper {
                 ..Default::default()
             })
             .await
-            .map_err(|e| Error::NodeApiError(e.to_string()))?
+            .map_err(|e| Error::NodeApi(e.to_string()))?
             .into_inner()
             .address;
         let address = to_address(&addr, self.config.network)?;
@@ -137,7 +137,7 @@ impl LndRpcWrapper {
                 ..Default::default()
             })
             .await
-            .map_err(|e| Error::NodeApiError(e.to_string()))?
+            .map_err(|e| Error::NodeApi(e.to_string()))?
             .into_inner()
             .txid;
 
@@ -164,7 +164,7 @@ impl LndRpcWrapper {
                 ..Default::default()
             })
             .await
-            .map_err(|e| Error::NodeApiError(e.to_string()))?
+            .map_err(|e| Error::NodeApi(e.to_string()))?
             .into_inner()
             .txid;
 
@@ -187,7 +187,7 @@ impl LndRpcWrapper {
                 ..Default::default()
             })
             .await
-            .map_err(|e| Error::NodeApiError(e.to_string()))?
+            .map_err(|e| Error::NodeApi(e.to_string()))?
             .into_inner()
             .sat_per_vbyte;
 
@@ -211,7 +211,7 @@ impl LndRpcWrapper {
                 ..Default::default()
             })
             .await
-            .map_err(|e| Error::NodeApiError(e.to_string()))?
+            .map_err(|e| Error::NodeApi(e.to_string()))?
             .into_inner();
 
         Ok(LnInvoice {
@@ -232,7 +232,7 @@ impl LndRpcWrapper {
             .router()
             .send_payment_v2(request)
             .await
-            .map_err(|e| Error::NodeApiError(e.to_string()))?;
+            .map_err(|e| Error::NodeApi(e.to_string()))?;
 
         // subscribe until the first non-inflight payment is received
         match result
@@ -311,7 +311,7 @@ impl LndRpcWrapper {
                 ..Default::default()
             })
             .await
-            .map_err(|e| Error::NodeApiError(e.to_string()))?
+            .map_err(|e| Error::NodeApi(e.to_string()))?
             .into_inner()
             .transactions)
     }
