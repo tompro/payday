@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use bitcoin::{hex::DisplayHex, Address, Network};
@@ -29,25 +29,35 @@ use payday_core::{
 use tokio::{sync::mpsc::Sender, task::JoinHandle};
 use tokio_stream::StreamExt;
 
-use crate::wrapper::LndRpcWrapper;
+use crate::wrapper::{LndApi, LndRpcWrapper};
 
 // The numeric state that LND indicates a settled invoice with.
 const LND_SETTLED: i32 = 1;
 
 #[derive(Clone)]
 pub struct Lnd {
-    client: LndRpcWrapper,
+    client: Arc<dyn LndApi>,
     pub(super) node_id: String,
     network: Network,
 }
 
 impl Lnd {
     pub async fn new(config: LndConfig) -> Result<Self> {
-        let client = LndRpcWrapper::new(config.clone()).await?;
+        let client = Arc::new(LndRpcWrapper::new(config.clone()).await?);
         let node_id = config.node_id();
         let network = config.network();
         Ok(Self {
             client,
+            node_id,
+            network,
+        })
+    }
+
+    pub async fn with_lnd_api(config: LndConfig, lnd: Arc<dyn LndApi>) -> Result<Self> {
+        let node_id = config.node_id();
+        let network = config.network();
+        Ok(Self {
+            client: lnd,
             node_id,
             network,
         })

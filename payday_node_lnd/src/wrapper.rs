@@ -7,6 +7,7 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
 
 use crate::{lnd::create_client, to_address};
+use async_trait::async_trait;
 use bitcoin::{hex::DisplayHex, Address, Amount, Network, PublicKey};
 use fedimint_tonic_lnd::{
     lnrpc::{
@@ -28,6 +29,83 @@ pub struct LndRpcWrapper {
     client: Arc<Mutex<Client>>,
     node_id: String,
     network: Network,
+}
+
+#[async_trait]
+pub trait LndApi: Send + Sync {
+    /// Get the unique name of the LND server. Names are used to
+    /// identify the server in logs and associated addresses and invoices.
+    fn get_name(&self) -> String;
+
+    async fn get_onchain_balance(&self) -> Result<WalletBalanceResponse>;
+
+    async fn get_channel_balance(&self) -> Result<ChannelBalanceResponse>;
+
+    /// Get the current balances (onchain and lightning) of the wallet.
+    async fn get_balances(&self) -> Result<(WalletBalanceResponse, ChannelBalanceResponse)>;
+
+    /// Get a new onchain address for the wallet. Address is parsed and
+    /// validated for the configure network.
+    async fn new_address(&self) -> Result<Address>;
+
+    /// Send coins to an address. Address is parsed and validated for the configure network.
+    /// Returns the transaction id.
+    async fn send_coins(
+        &self,
+        amount: Amount,
+        address: &str,
+        sats_per_vbyte: Amount,
+    ) -> Result<String>;
+
+    /// Send coins to multiple addresses.
+    async fn batch_send(
+        &self,
+        outputs: HashMap<Address, i64>,
+        sats_per_vbyte: Amount,
+    ) -> Result<String>;
+
+    /// Estimate the fee for a transaction.
+    async fn estimate_fee(&self, target_conf: i32, outputs: HashMap<String, i64>)
+        -> Result<Amount>;
+
+    /// Creates a lightning invoice.
+    async fn create_invoice(
+        &self,
+        amount: Amount,
+        memo: Option<String>,
+        ttl: Option<i64>,
+    ) -> Result<LnInvoice>;
+
+    /// Pay a given bolt11 invoice. The fee limit is optional and defaults to 0 (no limit) the
+    /// optional timeout defaults to 60 seconds.
+    async fn send_lightning_payment(
+        &self,
+        request: fedimint_tonic_lnd::routerrpc::SendPaymentRequest,
+    ) -> Result<fedimint_tonic_lnd::lnrpc::Payment>;
+
+    /// Pay a given bolt11 invoice. The fee limit is optional and defaults to 0 (no limit) the
+    /// optional timeout defaults to 60 seconds.
+    async fn pay_invoice(
+        &self,
+        invoice: Bolt11Invoice,
+        fee_limit_sat: Option<i64>,
+        timeout: Option<Duration>,
+    ) -> Result<fedimint_tonic_lnd::lnrpc::Payment>;
+
+    /// Pay a specified amount to a node id. The optional timeout defaults to 60 seconds.
+    async fn pay_to_node_id(
+        &self,
+        node_id: PublicKey,
+        amount: Amount,
+        timeout: Option<Duration>,
+    ) -> Result<fedimint_tonic_lnd::lnrpc::Payment>;
+
+    /// Get a list of onchain transactions between the given start and end heights.
+    async fn get_transactions(
+        &self,
+        start_height: i32,
+        end_height: i32,
+    ) -> Result<Vec<Transaction>>;
 }
 
 impl LndRpcWrapper {
@@ -59,17 +137,20 @@ impl LndRpcWrapper {
         })
     }
 
-    /// Get the unique name of the LND server. Names are used to
-    /// identify the server in logs and associated addresses and invoices.
-    pub fn get_name(&self) -> String {
-        self.node_id.to_string()
-    }
-
     async fn client(&self) -> MutexGuard<Client> {
         self.client.lock().await
     }
+}
 
-    pub async fn get_onchain_balance(&self) -> Result<WalletBalanceResponse> {
+#[async_trait]
+impl LndApi for LndRpcWrapper {
+    /// Get the unique name of the LND server. Names are used to
+    /// identify the server in logs and associated addresses and invoices.
+    fn get_name(&self) -> String {
+        self.node_id.to_string()
+    }
+
+    async fn get_onchain_balance(&self) -> Result<WalletBalanceResponse> {
         let mut lnd = self.client().await;
         Ok(lnd
             .lightning()
@@ -79,7 +160,7 @@ impl LndRpcWrapper {
             .into_inner())
     }
 
-    pub async fn get_channel_balance(&self) -> Result<ChannelBalanceResponse> {
+    async fn get_channel_balance(&self) -> Result<ChannelBalanceResponse> {
         let mut lnd = self.client().await;
         Ok(lnd
             .lightning()
@@ -90,7 +171,7 @@ impl LndRpcWrapper {
     }
 
     /// Get the current balances (onchain and lightning) of the wallet.
-    pub async fn get_balances(&self) -> Result<(WalletBalanceResponse, ChannelBalanceResponse)> {
+    async fn get_balances(&self) -> Result<(WalletBalanceResponse, ChannelBalanceResponse)> {
         let on_chain = self.get_onchain_balance().await?;
         let lightning = self.get_channel_balance().await?;
         Ok((on_chain, lightning))
@@ -98,7 +179,7 @@ impl LndRpcWrapper {
 
     /// Get a new onchain address for the wallet. Address is parsed and
     /// validated for the configure network.
-    pub async fn new_address(&self) -> Result<Address> {
+    async fn new_address(&self) -> Result<Address> {
         let addr = self
             .client()
             .await
@@ -116,7 +197,7 @@ impl LndRpcWrapper {
 
     /// Send coins to an address. Address is parsed and validated for the configure network.
     /// Returns the transaction id.
-    pub async fn send_coins(
+    async fn send_coins(
         &self,
         amount: Amount,
         address: &str,
@@ -142,7 +223,7 @@ impl LndRpcWrapper {
     }
 
     /// Send coins to multiple addresses.
-    pub async fn batch_send(
+    async fn batch_send(
         &self,
         outputs: HashMap<Address, i64>,
         sats_per_vbyte: Amount,
@@ -169,7 +250,7 @@ impl LndRpcWrapper {
     }
 
     /// Estimate the fee for a transaction.
-    pub async fn estimate_fee(
+    async fn estimate_fee(
         &self,
         target_conf: i32,
         outputs: HashMap<String, i64>,
@@ -192,7 +273,7 @@ impl LndRpcWrapper {
     }
 
     /// Creates a lightning invoice.
-    pub async fn create_invoice(
+    async fn create_invoice(
         &self,
         amount: Amount,
         memo: Option<String>,
@@ -220,7 +301,7 @@ impl LndRpcWrapper {
 
     /// Pay a given bolt11 invoice. The fee limit is optional and defaults to 0 (no limit) the
     /// optional timeout defaults to 60 seconds.
-    pub async fn send_lightning_payment(
+    async fn send_lightning_payment(
         &self,
         request: fedimint_tonic_lnd::routerrpc::SendPaymentRequest,
     ) -> Result<fedimint_tonic_lnd::lnrpc::Payment> {
@@ -255,7 +336,7 @@ impl LndRpcWrapper {
 
     /// Pay a given bolt11 invoice. The fee limit is optional and defaults to 0 (no limit) the
     /// optional timeout defaults to 60 seconds.
-    pub async fn pay_invoice(
+    async fn pay_invoice(
         &self,
         invoice: Bolt11Invoice,
         fee_limit_sat: Option<i64>,
@@ -275,7 +356,7 @@ impl LndRpcWrapper {
     }
 
     /// Pay a specified amount to a node id. The optional timeout defaults to 60 seconds.
-    pub async fn pay_to_node_id(
+    async fn pay_to_node_id(
         &self,
         node_id: PublicKey,
         amount: Amount,
@@ -294,7 +375,7 @@ impl LndRpcWrapper {
     }
 
     /// Get a list of onchain transactions between the given start and end heights.
-    pub async fn get_transactions(
+    async fn get_transactions(
         &self,
         start_height: i32,
         end_height: i32,
