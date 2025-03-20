@@ -1,7 +1,8 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use bitcoin::{hex::DisplayHex, Address, Network};
+use tracing::error;
 
 use crate::to_address;
 use fedimint_tonic_lnd::{
@@ -23,26 +24,43 @@ use payday_core::{
         },
     },
     payment::amount::Amount,
-    Result,
+    Error, Result,
 };
 use tokio::{sync::mpsc::Sender, task::JoinHandle};
 use tokio_stream::StreamExt;
 
-use crate::wrapper::LndRpcWrapper;
+use crate::wrapper::{LndApi, LndRpcWrapper};
 
 // The numeric state that LND indicates a settled invoice with.
 const LND_SETTLED: i32 = 1;
 
 #[derive(Clone)]
 pub struct Lnd {
-    pub(super) config: LndConfig,
-    client: LndRpcWrapper,
+    client: Arc<dyn LndApi>,
+    pub(super) node_id: String,
+    network: Network,
 }
 
 impl Lnd {
     pub async fn new(config: LndConfig) -> Result<Self> {
-        let client = LndRpcWrapper::new(config.clone()).await?;
-        Ok(Self { config, client })
+        let client = Arc::new(LndRpcWrapper::new(config.clone()).await?);
+        let node_id = config.node_id();
+        let network = config.network();
+        Ok(Self {
+            client,
+            node_id,
+            network,
+        })
+    }
+
+    pub async fn with_lnd_api(config: LndConfig, lnd: Arc<dyn LndApi>) -> Result<Self> {
+        let node_id = config.node_id();
+        let network = config.network();
+        Ok(Self {
+            client: lnd,
+            node_id,
+            network,
+        })
     }
 }
 
@@ -108,7 +126,7 @@ impl LightningInvoiceApi for Lnd {
 #[async_trait]
 impl OnChainPaymentApi for Lnd {
     fn validate_address(&self, address: &str) -> Result<Address> {
-        to_address(address, self.config.network)
+        to_address(address, self.network)
     }
 
     async fn estimate_fee(
@@ -150,7 +168,7 @@ impl OnChainPaymentApi for Lnd {
         let out = outputs
             .iter()
             .flat_map(|(k, v)| {
-                to_address(k, self.config.network)
+                to_address(k, self.network)
                     .ok()
                     .map(|a| (a, v.to_sat() as i64))
             })
@@ -195,7 +213,7 @@ impl OnChainTransactionApi for Lnd {
             .get_transactions(start_height, end_height)
             .await?
             .iter()
-            .flat_map(|tx| to_on_chain_events(tx, self.config.network, &self.config.node_id))
+            .flat_map(|tx| to_on_chain_events(tx, self.network, &self.node_id))
             .flatten()
             .collect();
         Ok(result)
@@ -203,21 +221,56 @@ impl OnChainTransactionApi for Lnd {
 }
 
 #[derive(Debug, Clone)]
-pub struct LndConfig {
-    pub node_id: String,
-    pub address: String,
-    pub cert_path: String,
-    pub macaroon_file: String,
-    pub network: Network,
+pub enum LndConfig {
+    /// with custom cert file and macaroon binary file
+    CertPath {
+        node_id: String,
+        address: String,
+        cert_path: String,
+        macaroon_file: String,
+        network: Network,
+    },
+    /// with root cert and macaroon string
+    RootCert {
+        node_id: String,
+        address: String,
+        macaroon: String,
+        network: Network,
+    },
+}
+
+impl LndConfig {
+    pub fn network(&self) -> Network {
+        match self {
+            LndConfig::CertPath { network, .. } => *network,
+            LndConfig::RootCert { network, .. } => *network,
+        }
+    }
+
+    pub fn node_id(&self) -> String {
+        match self {
+            LndConfig::CertPath { node_id, .. } => node_id.to_owned(),
+            LndConfig::RootCert { node_id, .. } => node_id.to_owned(),
+        }
+    }
+
+    pub fn address(&self) -> String {
+        match self {
+            LndConfig::CertPath { address, .. } => address.to_owned(),
+            LndConfig::RootCert { address, .. } => address.to_owned(),
+        }
+    }
 }
 
 pub struct LndPaymentEventStream {
     config: LndConfig,
+    node_id: String,
 }
 
 impl LndPaymentEventStream {
     pub fn new(config: LndConfig) -> Self {
-        Self { config }
+        let node_id = config.node_id();
+        Self { config, node_id }
     }
 
     /// does fetch potential missing events from the current start_height
@@ -233,7 +286,7 @@ impl LndPaymentEventStream {
 #[async_trait]
 impl OnChainTransactionStreamApi for LndPaymentEventStream {
     fn node_id(&self) -> String {
-        self.config.node_id.to_owned()
+        self.node_id.to_owned()
     }
     async fn subscribe_on_chain_transactions(
         &self,
@@ -258,31 +311,33 @@ impl OnChainTransactionStreamApi for LndPaymentEventStream {
         }
         let handle = tokio::spawn(async move {
             let sender = sender.clone();
-            let mut lnd: Client = fedimint_tonic_lnd::connect(
-                config.address.to_string(),
-                config.cert_path.to_string(),
-                config.macaroon_file.to_string(),
-            )
-            .await
-            .expect("Failed to connect to LND on-chain transaction stream");
+            let network = config.network();
+            let node_id = config.node_id();
+            if let Ok(mut lnd) = create_client(config.clone()).await {
+                let mut stream = lnd
+                    .lightning()
+                    .subscribe_transactions(GetTransactionsRequest::default())
+                    .await
+                    .expect("Failed to subscribe to LND on-chain transaction events")
+                    .into_inner()
+                    .filter(|tx| tx.is_ok())
+                    .map(|tx| tx.unwrap());
 
-            let mut stream = lnd
-                .lightning()
-                .subscribe_transactions(GetTransactionsRequest::default())
-                .await
-                .expect("Failed to subscribe to LND on-chain transaction events")
-                .into_inner()
-                .filter(|tx| tx.is_ok())
-                .map(|tx| tx.unwrap());
-
-            while let Some(event) = stream.next().await {
-                if let Ok(events) = to_on_chain_events(&event, config.network, &config.node_id) {
-                    for event in events {
-                        if let Err(e) = sender.send(event).await {
-                            println!("Failed to send on chain transaction event: {}", e);
+                while let Some(event) = stream.next().await {
+                    if let Ok(events) = to_on_chain_events(&event, network, &node_id) {
+                        for event in events {
+                            if let Err(e) = sender.send(event).await {
+                                error!("Failed to send on chain transaction event: {:?}", e);
+                            }
                         }
                     }
                 }
+            } else {
+                error!(
+                    "Failed to connect to LND {} {}",
+                    config.node_id(),
+                    config.address()
+                );
             }
         });
         Ok(handle)
@@ -300,33 +355,33 @@ impl LightningTransactionStreamApi for LndPaymentEventStream {
 
         let handle = tokio::spawn(async move {
             let sender = sender.clone();
-            let mut lnd: Client = fedimint_tonic_lnd::connect(
-                config.address.to_string(),
-                config.cert_path.to_string(),
-                config.macaroon_file.to_string(),
-            )
-            .await
-            .expect("Failed to connect to LND lightning transaction stream");
+            if let Ok(mut lnd) = create_client(config.clone()).await {
+                let mut stream = lnd
+                    .lightning()
+                    .subscribe_invoices(InvoiceSubscription {
+                        settle_index: settle_index.unwrap_or_default(),
+                        ..Default::default()
+                    })
+                    .await
+                    .expect("Failed to subscribe to LND lightning transaction events")
+                    .into_inner()
+                    .filter_map(|tx| tx.ok());
 
-            let mut stream = lnd
-                .lightning()
-                .subscribe_invoices(InvoiceSubscription {
-                    settle_index: settle_index.unwrap_or_default(),
-                    ..Default::default()
-                })
-                .await
-                .expect("Failed to subscribe to LND lightning transaction events")
-                .into_inner()
-                .filter_map(|tx| tx.ok());
-
-            while let Some(event) = stream.next().await {
-                if event.state == LND_SETTLED {
-                    if let Ok(event) = to_lightning_event(event, &config.node_id) {
-                        if let Err(e) = sender.send(event).await {
-                            println!("Failed to send lightning transaction event: {:?}", e);
+                while let Some(event) = stream.next().await {
+                    if event.state == LND_SETTLED {
+                        if let Ok(event) = to_lightning_event(event, &config.node_id()) {
+                            if let Err(e) = sender.send(event).await {
+                                println!("Failed to send lightning transaction event: {:?}", e);
+                            }
                         }
                     }
                 }
+            } else {
+                error!(
+                    "Failed to connect to LND {} {}",
+                    config.node_id(),
+                    config.address()
+                );
             }
         });
         Ok(handle)
@@ -399,4 +454,27 @@ fn to_on_chain_events(
         })
         .collect();
     Ok(res)
+}
+
+pub(crate) async fn create_client(config: LndConfig) -> Result<Client> {
+    let lnd: Client = match config {
+        LndConfig::RootCert {
+            address, macaroon, ..
+        } => fedimint_tonic_lnd::connect_root(address.to_string(), macaroon.to_string())
+            .await
+            .map_err(|e| Error::NodeConnect(e.to_string()))?,
+        LndConfig::CertPath {
+            address,
+            cert_path,
+            macaroon_file,
+            ..
+        } => fedimint_tonic_lnd::connect(
+            address.to_string(),
+            cert_path.to_string(),
+            macaroon_file.to_string(),
+        )
+        .await
+        .map_err(|e| Error::NodeConnect(e.to_string()))?,
+    };
+    Ok(lnd)
 }

@@ -26,18 +26,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // contains the event handler
     let service = OnChainService::new(aggregate);
 
-    let stream = Arc::new(LndPaymentEventStream::new(LndConfig {
+    let stream = Arc::new(LndPaymentEventStream::new(LndConfig::CertPath {
         node_id: "node1".to_string(),
         address: "https://localhost:10008".to_string(),
         cert_path: "tls.cert".to_string(),
         macaroon_file: "admin.macaroon".to_string(),
         network: Network::Signet,
     }));
-    let stream2 = Arc::new(LndPaymentEventStream::new(LndConfig {
+    let stream2 = Arc::new(LndPaymentEventStream::new(LndConfig::RootCert {
         node_id: "node2".to_string(),
         address: "https://localhost:10009".to_string(),
-        cert_path: "tls2.cert".to_string(),
-        macaroon_file: "admin2.macaroon".to_string(),
+        macaroon: "macaroon".to_string(),
         network: Network::Signet,
     }));
 
