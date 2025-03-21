@@ -13,3 +13,4 @@ cqrs-es.workspace = true
 tokio.workspace = true
 lightning-invoice.workspace = true
 tracing.workspace = true
+mockall.workspace = true

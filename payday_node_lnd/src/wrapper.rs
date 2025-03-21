@@ -18,6 +18,8 @@ use fedimint_tonic_lnd::{
     Client,
 };
 use lightning_invoice::Bolt11Invoice;
+#[cfg(test)]
+use mockall::automock;
 use payday_core::{api::lightining_api::LnInvoice, Error, Result};
 use tokio::sync::{Mutex, MutexGuard};
 use tokio_stream::StreamExt;
@@ -31,6 +33,7 @@ pub struct LndRpcWrapper {
     network: Network,
 }
 
+#[cfg_attr(test, automock)]
 #[async_trait]
 pub trait LndApi: Send + Sync {
     /// Get the unique name of the LND server. Names are used to
