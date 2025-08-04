@@ -12,8 +12,8 @@ use bitcoin::{hex::DisplayHex, Address, Amount, Network, PublicKey};
 use fedimint_tonic_lnd::{
     lnrpc::{
         payment::PaymentStatus, ChannelBalanceRequest, ChannelBalanceResponse, GetInfoRequest,
-        GetTransactionsRequest, Invoice, ListInvoiceRequest, SendCoinsRequest, SendManyRequest,
-        Transaction, WalletBalanceRequest, WalletBalanceResponse,
+        GetTransactionsRequest, Invoice, ListInvoiceRequest, ListInvoiceResponse, SendCoinsRequest,
+        SendManyRequest, Transaction, WalletBalanceRequest, WalletBalanceResponse,
     },
     Client,
 };
@@ -117,7 +117,7 @@ pub trait LndApi: Send + Sync {
         to: i64,
         limit: i64,
         index: i64,
-    ) -> Result<Vec<Invoice>>;
+    ) -> Result<ListInvoiceResponse>;
 }
 
 impl LndRpcWrapper {
@@ -415,7 +415,7 @@ impl LndApi for LndRpcWrapper {
         to: i64,
         limit: i64,
         index: i64,
-    ) -> Result<Vec<Invoice>> {
+    ) -> Result<ListInvoiceResponse> {
         let mut lnd = self.client().await;
         Ok(lnd
             .lightning()
@@ -428,8 +428,7 @@ impl LndApi for LndRpcWrapper {
             })
             .await
             .map_err(|e| Error::NodeApi(e.to_string()))?
-            .into_inner()
-            .invoices)
+            .into_inner())
     }
 }
 
