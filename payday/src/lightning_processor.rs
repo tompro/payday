@@ -1,36 +1,36 @@
 use std::sync::Arc;
 
-use payday_core::api::on_chain_api::{
-    OnChainTransactionEventHandler, OnChainTransactionEventProcessorApi,
-    OnChainTransactionStreamApi,
+use payday_core::api::lightning_api::{
+    LightningTransactionEventHandler, LightningTransactionEventProcessorApi,
+    LightningTransactionStreamApi,
 };
 use payday_core::persistence::offset::OffsetStoreApi;
-use payday_core::processor::on_chain_processor::OnChainTransactionProcessor;
+use payday_core::processor::lightning_processor::LightningTransactionProcessor;
 use payday_postgres::offset::OffsetStore;
 use sqlx::{Pool, Postgres};
 use tokio::task::{JoinError, JoinSet};
 use tracing::{error, info};
 
 #[allow(dead_code)]
-pub struct OnChainEventProcessor {
+pub struct LightningEventProcessor {
     pool: Pool<Postgres>,
-    nodes: Vec<Arc<dyn OnChainTransactionStreamApi>>,
-    handler: Arc<dyn OnChainTransactionEventHandler>,
+    nodes: Vec<Arc<dyn LightningTransactionStreamApi>>,
+    handler: Arc<dyn LightningTransactionEventHandler>,
 }
 
-/// # OnChainEventProcessor
+/// # LightningEventProcessor
 ///
-/// A processor responsible for handling on-chain transaction events from multiple blockchain nodes.
+/// A processor responsible for handling lightning network events from multiple lightning nodes.
 ///
 /// ## Overview
 ///
-/// `OnChainEventProcessor` coordinates the subscription to on-chain transaction streams from multiple
-/// nodes and processes the incoming transaction events. It maintains the processing offset for each node
-/// to enable resuming from the last processed block height in case of service restart.
+/// `LightningEventProcessor` coordinates the subscription to lightning network event streams from multiple
+/// nodes and processes the incoming events. It maintains the processing offset for each node
+/// to enable resuming from the last processed event in case of service restart.
 ///
 /// ## Features
 ///
-/// - Subscribes to multiple blockchain nodes simultaneously
+/// - Subscribes to multiple lightning nodes simultaneously
 /// - Resumes processing from the last known offset for each node
 /// - Uses a channel-based approach for handling events
 /// - Manages concurrent processing with tokio tasks
@@ -39,20 +39,20 @@ pub struct OnChainEventProcessor {
 /// ## Architecture
 ///
 /// The processor consists of:
-/// - A collection of blockchain node connections implementing `OnChainTransactionStreamApi`
-/// - An event handler implementing `OnChainTransactionEventHandler`
+/// - A collection of lightning node connections implementing `LightningStreamApi`
+/// - An event handler implementing `LightningEventHandler`
 /// - A PostgreSQL connection pool for persisting offsets
 /// - A managed set of tasks for processing events
 ///
 /// ## Examples
 ///
-/// ### Creating and starting an OnChainEventProcessor
+/// ### Creating and starting a LightningEventProcessor
 ///
 /// ```no_run
 /// use std::sync::Arc;
 /// use sqlx::postgres::PgPoolOptions;
-/// use payday_core::api::on_chain_api::{OnChainTransactionEventHandler, OnChainTransactionStreamApi};
-/// use payday::on_chain_processor::OnChainEventProcessor;
+/// use payday_core::api::lightning_api::{LightningEventHandler, LightningStreamApi};
+/// use payday::lightning_processor::LightningEventProcessor;
 ///
 /// #[tokio::main]
 /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -61,14 +61,14 @@ pub struct OnChainEventProcessor {
 ///         .max_connections(5)
 ///         .connect("postgres://username:password@localhost/database_name").await?;
 ///
-///     // Initialize your blockchain nodes
-///     let nodes: Vec<Arc<dyn OnChainTransactionStreamApi>> = vec![];
+///     // Initialize your lightning nodes
+///     let nodes: Vec<Arc<dyn LightningStreamApi>> = vec![];
 ///
 ///     // Initialize your event handler
-///     let handler: Option<Arc<dyn OnChainTransactionEventHandler>> = None;
+///     let handler: Option<Arc<dyn LightningEventHandler>> = None;
 ///     
 ///     // Create the processor
-///     let processor = OnChainEventProcessor::new(
+///     let processor = LightningEventProcessor::new(
 ///         pool,
 ///         nodes,
 ///         handler.unwrap(),
@@ -89,11 +89,11 @@ pub struct OnChainEventProcessor {
 ///     Ok(())
 /// }
 /// ```
-impl OnChainEventProcessor {
+impl LightningEventProcessor {
     pub fn new(
         pool: Pool<Postgres>,
-        nodes: Vec<Arc<dyn OnChainTransactionStreamApi>>,
-        handler: Arc<dyn OnChainTransactionEventHandler>,
+        nodes: Vec<Arc<dyn LightningTransactionStreamApi>>,
+        handler: Arc<dyn LightningTransactionEventHandler>,
     ) -> Self {
         Self {
             pool,
@@ -109,35 +109,34 @@ impl OnChainEventProcessor {
         let offset_store = OffsetStore::new(
             self.pool.clone(),
             Some("payday.offsets".to_string()),
-            Some("on_chain".to_string()),
+            Some("lightning".to_string()),
         );
 
         for node in &self.nodes {
-            let start_height: Option<u64> = offset_store
+            let last_offset = offset_store
                 .get_offset(&node.node_id())
                 .await
                 .ok()
                 .map(|o| o.offset);
             if let Ok(join) = node
-                .subscribe_on_chain_transactions(snd.clone(), start_height)
+                .subscribe_lightning_events(snd.clone(), last_offset)
                 .await
             {
                 join_set.spawn(join);
             } else {
                 error!(
-                    "Failed to subscribe to on chain transactions for node {}",
+                    "Failed to subscribe to lightning events for node {}",
                     node.node_id()
                 );
             }
         }
 
-        let processor =
-            OnChainTransactionProcessor::new(Box::new(offset_store), self.handler.clone());
+        let processor = LightningProcessor::new(Box::new(offset_store), self.handler.clone());
         let handle = tokio::spawn(async move {
             while let Some(event) = rcv.recv().await {
-                info!("Received event: {:?}", event);
+                info!("Received lightning event: {:?}", event);
                 if let Err(err) = processor.process_event(event).await {
-                    error!("Failed to process on chain event: {:?}", err);
+                    error!("Failed to process lightning event: {:?}", err);
                 }
             }
         });

@@ -21,10 +21,7 @@ pub fn load_env_config() -> &'static Conf {
     static INSTANCE: OnceLock<Conf> = OnceLock::new();
     INSTANCE.get_or_init(|| {
         Conf::with_layers(&[Layer::Env(Some("SERVICE_".to_owned()))]).unwrap_or_else(|e| {
-            panic!(
-                "Failed to load configuration from environment variables: {}",
-                e
-            )
+            panic!("Failed to load configuration from environment variables: {e}")
         })
     })
 }

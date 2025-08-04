@@ -303,10 +303,7 @@ impl OnChainTransactionStreamApi for LndPaymentEventStream {
         // catch up to from start height to now
         for event in start_events {
             if let Err(e) = sender.send(event).await {
-                println!(
-                    "Failed to send historic on chain transaction event: {:?}",
-                    e
-                );
+                println!("Failed to send historic on chain transaction event: {e:?}");
             }
         }
         let handle = tokio::spawn(async move {
@@ -327,7 +324,7 @@ impl OnChainTransactionStreamApi for LndPaymentEventStream {
                     if let Ok(events) = to_on_chain_events(&event, network, &node_id) {
                         for event in events {
                             if let Err(e) = sender.send(event).await {
-                                error!("Failed to send on chain transaction event: {:?}", e);
+                                error!("Failed to send on chain transaction event: {e:?}");
                             }
                         }
                     }
@@ -371,7 +368,7 @@ impl LightningTransactionStreamApi for LndPaymentEventStream {
                     if event.state == LND_SETTLED {
                         if let Ok(event) = to_lightning_event(event, &config.node_id()) {
                             if let Err(e) = sender.send(event).await {
-                                println!("Failed to send lightning transaction event: {:?}", e);
+                                println!("Failed to send lightning transaction event: {e:?}");
                             }
                         }
                     }

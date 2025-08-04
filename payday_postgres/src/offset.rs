@@ -27,7 +27,7 @@ impl OffsetStore {
 
     fn with_prefix(&self, id: &str) -> String {
         match &self.prefix {
-            Some(prefix) => format!("{}:{}", prefix, id),
+            Some(prefix) => format!("{prefix}:{id}"),
             None => id.to_owned(),
         }
     }

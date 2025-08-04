@@ -127,8 +127,7 @@ impl TryFrom<i32> for InvoiceState {
             2 => Ok(InvoiceState::CANCELED),
             3 => Ok(InvoiceState::ACCEPTED),
             _ => Err(Error::InvalidInvoiceState(format!(
-                "Invalid invoice state: {}",
-                value
+                "Invalid invoice state: {value}"
             ))),
         }
     }
@@ -149,6 +148,6 @@ impl Into<i32> for InvoiceState {
 
 impl Display for InvoiceState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }

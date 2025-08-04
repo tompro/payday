@@ -61,8 +61,7 @@ impl NodeApi for Lnd {
             }
             #[allow(unreachable_patterns)]
             _ => Err(Error::InvalidPaymentType(format!(
-                "Invalid payment type: {:?} for LND node",
-                payment_type
+                "Invalid payment type: {payment_type:?} for LND node"
             ))),
         }
     }

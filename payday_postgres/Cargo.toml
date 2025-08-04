@@ -14,5 +14,5 @@ serde_json.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]
-testcontainers = { version = "0.23" }
-testcontainers-modules = { version = "0.11.5", features = ["postgres"] }
+testcontainers = { version = "0.24" }
+testcontainers-modules = { version = "0.12", features = ["postgres"] }

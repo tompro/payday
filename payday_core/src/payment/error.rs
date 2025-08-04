@@ -19,18 +19,17 @@ impl std::error::Error for Error {}
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::InvalidAmount(a) => write!(f, "Invoice invalid amount: {}", a),
+            Error::InvalidAmount(a) => write!(f, "Invoice invalid amount: {a}"),
             Error::InvalidCurrency(required, received) => write!(
                 f,
-                "Invoice invalid currency required: {} received: {}",
-                required, received
+                "Invoice invalid currency required: {required} received: {received}"
             ),
-            Error::ServiceError(err) => write!(f, "Invoice service error: {}", err),
-            Error::InvoiceAlreadyExists(id) => write!(f, "Invoice already exists: {}", id),
+            Error::ServiceError(err) => write!(f, "Invoice service error: {err}"),
+            Error::InvoiceAlreadyExists(id) => write!(f, "Invoice already exists: {id}"),
             Error::InvoiceDetailsCreation(msg) => {
-                write!(f, "Invoice details creation error: {}", msg)
+                write!(f, "Invoice details creation error: {msg}")
             }
-            Error::InvalidPaymentType(msg) => write!(f, "Invalid payment type: {}", msg),
+            Error::InvalidPaymentType(msg) => write!(f, "Invalid payment type: {msg}"),
         }
     }
 }
