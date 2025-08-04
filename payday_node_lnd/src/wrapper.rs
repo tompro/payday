@@ -12,8 +12,8 @@ use bitcoin::{hex::DisplayHex, Address, Amount, Network, PublicKey};
 use fedimint_tonic_lnd::{
     lnrpc::{
         payment::PaymentStatus, ChannelBalanceRequest, ChannelBalanceResponse, GetInfoRequest,
-        GetTransactionsRequest, Invoice, SendCoinsRequest, SendManyRequest, Transaction,
-        WalletBalanceRequest, WalletBalanceResponse,
+        GetTransactionsRequest, Invoice, ListInvoiceRequest, SendCoinsRequest, SendManyRequest,
+        Transaction, WalletBalanceRequest, WalletBalanceResponse,
     },
     Client,
 };
@@ -109,6 +109,15 @@ pub trait LndApi: Send + Sync {
         start_height: i32,
         end_height: i32,
     ) -> Result<Vec<Transaction>>;
+
+    /// Get a list of LN invoices between the given start and end date timestamps.
+    async fn get_invoices(
+        &self,
+        from: i64,
+        to: i64,
+        limit: i64,
+        index: i64,
+    ) -> Result<Vec<Invoice>>;
 }
 
 impl LndRpcWrapper {
@@ -397,6 +406,30 @@ impl LndApi for LndRpcWrapper {
             .map_err(|e| Error::NodeApi(e.to_string()))?
             .into_inner()
             .transactions)
+    }
+
+    /// Get a list of LN invoices between the given start and end date timestamps.
+    async fn get_invoices(
+        &self,
+        from: i64,
+        to: i64,
+        limit: i64,
+        index: i64,
+    ) -> Result<Vec<Invoice>> {
+        let mut lnd = self.client().await;
+        Ok(lnd
+            .lightning()
+            .list_invoices(ListInvoiceRequest {
+                num_max_invoices: limit as u64,
+                creation_date_start: from as u64,
+                creation_date_end: to as u64,
+                index_offset: index as u64,
+                ..Default::default()
+            })
+            .await
+            .map_err(|e| Error::NodeApi(e.to_string()))?
+            .into_inner()
+            .invoices)
     }
 }
 
