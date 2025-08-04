@@ -157,7 +157,9 @@ impl LndApi for LndRpcWrapper {
         let mut lnd = self.client().await;
         Ok(lnd
             .lightning()
-            .wallet_balance(WalletBalanceRequest {})
+            .wallet_balance(WalletBalanceRequest {
+                ..Default::default()
+            })
             .await
             .map_err(|e| Error::NodeApi(e.to_string()))?
             .into_inner())
