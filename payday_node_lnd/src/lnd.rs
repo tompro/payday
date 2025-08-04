@@ -14,8 +14,8 @@ use payday_core::{
     api::{
         lightining_api::{
             ChannelBalance, GetLightningBalanceApi, LightningInvoiceApi, LightningPaymentApi,
-            LightningTransaction, LightningTransactionEvent, LightningTransactionStreamApi,
-            LnInvoice, NodeBalance,
+            LightningTransaction, LightningTransactionApi, LightningTransactionEvent,
+            LightningTransactionStreamApi, LnInvoice, NodeBalance,
         },
         on_chain_api::{
             GetOnChainBalanceApi, OnChainBalance, OnChainInvoiceApi, OnChainPaymentApi,
@@ -220,6 +220,28 @@ impl OnChainTransactionApi for Lnd {
     }
 }
 
+#[async_trait]
+impl LightningTransactionApi for Lnd {
+    /// Get history of lightning transactions between start date timestamp and end date timestamp.
+    async fn get_lightning_transactions(
+        &self,
+        from: i64,
+        to: i64,
+        limit: i64,
+        index: i64,
+    ) -> Result<Vec<LightningTransaction>> {
+        let result = self
+            .client
+            .get_invoices(from, to, limit, index)
+            .await?
+            .invoices
+            .into_iter()
+            .map(|e| to_lightning_transaction(e, &self.node_id))
+            .collect();
+        Ok(result)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum LndConfig {
     /// with custom cert file and macaroon binary file
@@ -389,14 +411,30 @@ fn to_lightning_event(
     event: fedimint_tonic_lnd::lnrpc::Invoice,
     node_id: &str,
 ) -> Result<LightningTransactionEvent> {
-    Ok(LightningTransactionEvent::Settled(LightningTransaction {
+    Ok(LightningTransactionEvent::Settled(
+        to_lightning_transaction(event, node_id),
+    ))
+}
+
+fn to_lightning_transaction(
+    event: fedimint_tonic_lnd::lnrpc::Invoice,
+    node_id: &str,
+) -> LightningTransaction {
+    LightningTransaction {
         node_id: node_id.to_owned(),
         r_hash: event.r_hash.to_lower_hex_string(),
         invoice: event.payment_request.to_owned(),
         amount: Amount::sats(event.value as u64),
         amount_paid: Amount::sats(event.amt_paid_sat as u64),
         settle_index: event.settle_index,
-    }))
+        create_date: event.creation_date as u64,
+        settle_date: event.settle_date as u64,
+        memo: if event.memo.is_empty() {
+            None
+        } else {
+            Some(event.memo.to_owned())
+        },
+    }
 }
 
 /// Converts a satoshi amount to an Amount

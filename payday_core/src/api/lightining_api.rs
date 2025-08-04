@@ -36,6 +36,18 @@ pub trait LightningPaymentApi: Send + Sync {
     async fn pay_to_node_pub_key(&self, pub_key: String, amount: Amount) -> Result<()>;
 }
 
+#[async_trait]
+pub trait LightningTransactionApi: Send + Sync {
+    /// Get history of lightning transactions between start date timestamp and end date timestamp.
+    async fn get_lightning_transactions(
+        &self,
+        from: i64,
+        to: i64,
+        limit: i64,
+        index: i64,
+    ) -> Result<Vec<LightningTransaction>>;
+}
+
 /// Allows consuming Lightning transaction events from a Lightning node.
 #[async_trait]
 pub trait LightningTransactionStreamApi: Send + Sync {
@@ -88,7 +100,10 @@ pub struct LightningTransaction {
     pub invoice: String,
     pub amount: Amount,
     pub amount_paid: Amount,
+    pub create_date: u64,
+    pub settle_date: u64,
     pub settle_index: u64,
+    pub memo: Option<String>,
 }
 
 #[derive(Debug, Clone)]
