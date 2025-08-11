@@ -6,9 +6,7 @@ use std::str::FromStr;
 
 use bitcoin::{Address, Network};
 use payday_core::{
-    api::{
-        lightining_api::LightningInvoiceApi, node_api::NodeApi, on_chain_api::OnChainInvoiceApi,
-    },
+    api::{lightning_api::LightningInvoiceApi, node_api::NodeApi, on_chain_api::OnChainInvoiceApi},
     payment::{
         invoice::{InvoiceDetails, LightningInvoiceDetails, OnChainInvoiceDetails, PaymentType},
         Amount,

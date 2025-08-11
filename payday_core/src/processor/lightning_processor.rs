@@ -1,5 +1,5 @@
 use crate::{
-    api::lightining_api::{
+    api::lightning_api::{
         LightningTransactionEvent, LightningTransactionEventHandler,
         LightningTransactionEventProcessorApi,
     },

@@ -12,7 +12,7 @@ use fedimint_tonic_lnd::{
 use lightning_invoice::Bolt11Invoice;
 use payday_core::{
     api::{
-        lightining_api::{
+        lightning_api::{
             ChannelBalance, GetLightningBalanceApi, LightningInvoiceApi, LightningPaymentApi,
             LightningTransaction, LightningTransactionApi, LightningTransactionEvent,
             LightningTransactionStreamApi, LnInvoice, NodeBalance,
@@ -529,7 +529,7 @@ mod tests {
     use fedimint_tonic_lnd::lnrpc::{ChannelBalanceResponse, Invoice, OutputDetail, Transaction};
     use payday_core::{
         api::{
-            lightining_api::{
+            lightning_api::{
                 GetLightningBalanceApi, LightningInvoiceApi, LightningPaymentApi,
                 LightningTransactionEvent, LnInvoice,
             },

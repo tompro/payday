@@ -1,5 +1,5 @@
 use crate::{
-    api::lightining_api::LightningTransactionEvent,
+    api::lightning_api::LightningTransactionEvent,
     payment::{amount::Amount, currency::Currency, invoice::InvoiceId, Error},
 };
 use async_trait::async_trait;

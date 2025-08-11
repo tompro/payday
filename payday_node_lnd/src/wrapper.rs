@@ -20,7 +20,7 @@ use fedimint_tonic_lnd::{
 use lightning_invoice::Bolt11Invoice;
 #[cfg(test)]
 use mockall::automock;
-use payday_core::{api::lightining_api::LnInvoice, Error, Result};
+use payday_core::{api::lightning_api::LnInvoice, Error, Result};
 use tokio::sync::{Mutex, MutexGuard};
 use tokio_stream::StreamExt;
 
