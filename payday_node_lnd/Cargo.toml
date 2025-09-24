@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-fedimint-tonic-lnd = { git = "https://github.com/tompro/tonic_lnd.git", rev = "b806bf4" }
+fedimint-tonic-lnd = { git = "https://github.com/tompro/tonic_lnd.git", rev = "db89943" }
 payday_core = { path = "../payday_core" }
 async-trait.workspace = true
 bitcoin.workspace = true
