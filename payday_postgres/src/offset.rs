@@ -122,6 +122,7 @@ mod tests {
     use crate::test_utils::get_postgres_pool;
 
     #[tokio::test]
+    #[ignore = "integration test"]
     async fn test_get_set_offset_non_existant() {
         let db = get_postgres_pool().await;
         let store = OffsetStore::new(db, None, None);
@@ -133,6 +134,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "integration test"]
     async fn test_get_set_offset() {
         let id = "test_get_set_offset";
         let db = get_postgres_pool().await;
