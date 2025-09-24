@@ -149,7 +149,7 @@ impl LndRpcWrapper {
         })
     }
 
-    async fn client(&self) -> MutexGuard<Client> {
+    async fn client(&self) -> MutexGuard<'_, Client> {
         self.client.lock().await
     }
 }
