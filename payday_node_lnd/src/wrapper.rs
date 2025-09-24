@@ -12,8 +12,9 @@ use bitcoin::{hex::DisplayHex, Address, Amount, Network, PublicKey};
 use fedimint_tonic_lnd::{
     lnrpc::{
         payment::PaymentStatus, ChannelBalanceRequest, ChannelBalanceResponse, GetInfoRequest,
-        GetTransactionsRequest, Invoice, ListInvoiceRequest, ListInvoiceResponse, SendCoinsRequest,
-        SendManyRequest, Transaction, WalletBalanceRequest, WalletBalanceResponse,
+        GetTransactionsRequest, Invoice, ListChannelsRequest, ListChannelsResponse,
+        ListInvoiceRequest, ListInvoiceResponse, SendCoinsRequest, SendManyRequest, Transaction,
+        WalletBalanceRequest, WalletBalanceResponse,
     },
     Client,
 };
@@ -46,6 +47,9 @@ pub trait LndApi: Send + Sync {
 
     /// Get the current balances (onchain and lightning) of the wallet.
     async fn get_balances(&self) -> Result<(WalletBalanceResponse, ChannelBalanceResponse)>;
+
+    /// List channels of this node.
+    async fn list_channels(&self, request: ListChannelsRequest) -> Result<ListChannelsResponse>;
 
     /// Get a new onchain address for the wallet. Address is parsed and
     /// validated for the configure network.
@@ -189,6 +193,17 @@ impl LndApi for LndRpcWrapper {
         let on_chain = self.get_onchain_balance().await?;
         let lightning = self.get_channel_balance().await?;
         Ok((on_chain, lightning))
+    }
+
+    /// List channels of this node filtered by given parameters.
+    async fn list_channels(&self, request: ListChannelsRequest) -> Result<ListChannelsResponse> {
+        let mut lnd = self.client().await;
+        Ok(lnd
+            .lightning()
+            .list_channels(request)
+            .await
+            .map_err(|e| Error::NodeApi(e.to_string()))?
+            .into_inner())
     }
 
     /// Get a new onchain address for the wallet. Address is parsed and
