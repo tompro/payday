@@ -30,6 +30,7 @@ use crate::lnd::LndConfig;
 #[derive(Clone)]
 pub struct LndRpcWrapper {
     client: Arc<Mutex<Client>>,
+    node_name: String,
     node_id: String,
     network: Network,
 }
@@ -40,6 +41,9 @@ pub trait LndApi: Send + Sync {
     /// Get the unique name of the LND server. Names are used to
     /// identify the server in logs and associated addresses and invoices.
     fn get_name(&self) -> String;
+
+    /// Get the node id public key as a string.
+    fn get_node_id(&self) -> String;
 
     async fn get_onchain_balance(&self) -> Result<WalletBalanceResponse>;
 
@@ -129,25 +133,29 @@ impl LndRpcWrapper {
     /// checks whether the RPC server is serving the expected network.
     pub async fn new(config: LndConfig) -> Result<Self> {
         let mut lnd = create_client(config.clone()).await?;
-        let network_info = lnd
+        let info = lnd
             .lightning()
             .get_info(GetInfoRequest {})
             .await
             .map_err(|e| Error::NodeApi(e.to_string()))?
-            .into_inner()
+            .into_inner();
+
+        let network_info = info
             .chains
             .first()
             .expect("no network info found")
             .network
             .to_string();
 
-        let node_id = config.node_id();
+        let node_id = info.identity_pubkey.to_string();
+        let node_name = config.node_id();
         let network = config.network();
         if network != network_from_str(&network_info)? {
             return Err(Error::InvalidBitcoinNetwork(network_info));
         }
         Ok(Self {
             client: Arc::new(Mutex::new(lnd)),
+            node_name,
             node_id,
             network,
         })
@@ -163,6 +171,10 @@ impl LndApi for LndRpcWrapper {
     /// Get the unique name of the LND server. Names are used to
     /// identify the server in logs and associated addresses and invoices.
     fn get_name(&self) -> String {
+        self.node_name.to_string()
+    }
+
+    fn get_node_id(&self) -> String {
         self.node_id.to_string()
     }
 
