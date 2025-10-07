@@ -99,6 +99,7 @@ pub trait LndApi: Send + Sync {
     async fn pay_invoice(
         &self,
         invoice: Bolt11Invoice,
+        amount: Option<Amount>,
         fee_limit_sat: Option<i64>,
         timeout: Option<Duration>,
     ) -> Result<fedimint_tonic_lnd::lnrpc::Payment>;
@@ -380,16 +381,29 @@ impl LndApi for LndRpcWrapper {
     async fn pay_invoice(
         &self,
         invoice: Bolt11Invoice,
+        amount: Option<Amount>,
         fee_limit_sat: Option<i64>,
         timeout: Option<Duration>,
     ) -> Result<fedimint_tonic_lnd::lnrpc::Payment> {
         let timeout_seconds = timeout.map(|t| t.as_secs() as i32).unwrap_or(60);
+        let sat_amount = if invoice.amount_milli_satoshis().is_none() {
+            if amount.is_none() {
+                return Err(Error::InvalidBitcoinAmount(
+                    "No amount provided for zero amount lightning invoice".to_string(),
+                ));
+            } else {
+                amount.map(|a| a.to_sat() as i64)
+            }
+        } else {
+            None
+        };
         let result = self
             .send_lightning_payment(fedimint_tonic_lnd::routerrpc::SendPaymentRequest {
                 payment_request: invoice.to_string(),
                 timeout_seconds,
                 fee_limit_sat: fee_limit_sat.unwrap_or(0),
                 no_inflight_updates: true,
+                amt: sat_amount.unwrap_or_default(),
                 ..Default::default()
             })
             .await?;

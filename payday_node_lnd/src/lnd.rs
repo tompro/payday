@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use bitcoin::{hex::DisplayHex, Address, Network};
@@ -195,8 +195,21 @@ impl LightningPaymentApi for Lnd {
         Ok(())
     }
 
-    async fn pay_invoice(&self, invoice: Bolt11Invoice) -> Result<()> {
-        self.client.pay_invoice(invoice, None, None).await?;
+    async fn pay_invoice(
+        &self,
+        invoice: Bolt11Invoice,
+        amount: Option<Amount>,
+        fee_limit: Option<Amount>,
+        timeout: Option<Duration>,
+    ) -> Result<()> {
+        self.client
+            .pay_invoice(
+                invoice,
+                amount.map(|a| bitcoin::Amount::from_sat(a.cent_amount)),
+                fee_limit.map(|a| a.cent_amount as i64),
+                timeout,
+            )
+            .await?;
         Ok(())
     }
 }
@@ -887,12 +900,12 @@ mod tests {
 
         mock.expect_pay_invoice()
             .times(1)
-            .returning(|_, _, _| Ok(fedimint_tonic_lnd::lnrpc::Payment::default()));
+            .returning(|_, _, _, _| Ok(fedimint_tonic_lnd::lnrpc::Payment::default()));
 
         let lnd = Lnd::with_lnd_api(create_test_config(), Arc::new(mock))
             .await
             .unwrap();
-        let result = lnd.pay_invoice(invoice).await;
+        let result = lnd.pay_invoice(invoice, None, None, None).await;
 
         assert!(result.is_ok());
     }

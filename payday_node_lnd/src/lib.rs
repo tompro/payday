@@ -14,6 +14,7 @@ use payday_core::{
     Error, Result,
 };
 
+pub use fedimint_tonic_lnd::lnrpc::Payment;
 pub use lnd::Lnd;
 
 /// Given a Bitcoin address string and a network, parses and validates the address.

@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, time::Duration};
 
 use crate::{payment::amount::Amount, Error, Result};
 use async_trait::async_trait;
@@ -30,7 +30,13 @@ pub trait LightningInvoiceApi: Send + Sync {
 #[async_trait]
 pub trait LightningPaymentApi: Send + Sync {
     /// Pays a given BOLT11 invoice.
-    async fn pay_invoice(&self, invoice: Bolt11Invoice) -> Result<()>;
+    async fn pay_invoice(
+        &self,
+        invoice: Bolt11Invoice,
+        amount: Option<Amount>,
+        fee_limit: Option<Amount>,
+        timeout: Option<Duration>,
+    ) -> Result<()>;
 
     /// Pays the given amount to the given node public key.
     async fn pay_to_node_pub_key(&self, pub_key: String, amount: Amount) -> Result<()>;
