@@ -8,7 +8,11 @@ use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
 
 use crate::{lnd::create_client, to_address};
 use async_trait::async_trait;
-use bitcoin::{hex::DisplayHex, Address, Amount, Network, PublicKey};
+use bitcoin::{
+    hashes::{sha256, Hash},
+    hex::DisplayHex,
+    Address, Amount, Network, PublicKey,
+};
 use fedimint_tonic_lnd::{
     lnrpc::{
         payment::PaymentStatus, ChannelBalanceRequest, ChannelBalanceResponse, GetInfoRequest,
@@ -22,6 +26,7 @@ use lightning_invoice::Bolt11Invoice;
 #[cfg(test)]
 use mockall::automock;
 use payday_core::{api::lightning_api::LnInvoice, Error, Result};
+use rand::Rng;
 use tokio::sync::{Mutex, MutexGuard};
 use tokio_stream::StreamExt;
 
@@ -418,11 +423,23 @@ impl LndApi for LndRpcWrapper {
         timeout: Option<Duration>,
     ) -> Result<fedimint_tonic_lnd::lnrpc::Payment> {
         let timeout_seconds = timeout.map(|t| t.as_secs() as i32).unwrap_or(60);
+        let mut pre_image = [0u8; 32];
+        rand::rng().fill(&mut pre_image);
+
+        let payment_hash = sha256::Hash::from_slice(&pre_image)
+            .map_err(|e| Error::Payment(format!("Could not create payment hash {e}")))?;
+
+        // The magic of Lightning
+        let dest_custom_records: HashMap<u64, Vec<u8>> =
+            HashMap::from([(5482373484, pre_image.to_vec())]);
+
         let result = self
             .send_lightning_payment(fedimint_tonic_lnd::routerrpc::SendPaymentRequest {
                 dest: node_id.to_bytes(),
                 amt: amount.to_sat() as i64,
                 timeout_seconds,
+                payment_hash: payment_hash.to_byte_array().to_vec(),
+                dest_custom_records,
                 ..Default::default()
             })
             .await?;

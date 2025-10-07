@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 fedimint-tonic-lnd = { git = "https://github.com/tompro/tonic_lnd.git", branch = "master" }
 payday_core = { path = "../payday_core" }
+rand = "0.9"
 async-trait.workspace = true
 bitcoin.workspace = true
 tokio-stream.workspace = true
