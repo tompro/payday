@@ -426,8 +426,7 @@ impl LndApi for LndRpcWrapper {
         let mut pre_image = [0u8; 32];
         rand::rng().fill(&mut pre_image);
 
-        let payment_hash = sha256::Hash::from_slice(&pre_image)
-            .map_err(|e| Error::Payment(format!("Could not create payment hash {e}")))?;
+        let payment_hash = sha256::Hash::hash(&pre_image);
 
         // The magic of Lightning
         let dest_custom_records: HashMap<u64, Vec<u8>> =
