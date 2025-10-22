@@ -6,6 +6,7 @@
 //! operations needed for invoicing.
 use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
 
+use crate::lnd::LndConfig;
 use crate::{lnd::create_client, to_address};
 use async_trait::async_trait;
 use bitcoin::{
@@ -28,9 +29,6 @@ use mockall::automock;
 use payday_core::{api::lightning_api::LnInvoice, Error, Result};
 use rand::Rng;
 use tokio::sync::{Mutex, MutexGuard};
-use tokio_stream::StreamExt;
-
-use crate::lnd::LndConfig;
 
 #[derive(Clone)]
 pub struct LndRpcWrapper {
@@ -353,29 +351,36 @@ impl LndApi for LndRpcWrapper {
         request: fedimint_tonic_lnd::routerrpc::SendPaymentRequest,
     ) -> Result<fedimint_tonic_lnd::lnrpc::Payment> {
         let mut lnd = self.client().await;
-        let result = lnd
+        let mut result = lnd
             .router()
             .send_payment_v2(request)
             .await
-            .map_err(|e| Error::NodeApi(e.to_string()))?;
+            .map_err(|e| Error::NodeApi(e.to_string()))?
+            .into_inner();
 
-        // subscribe until the first non-inflight payment is received
-        match result
-            .into_inner()
-            .filter_map(|r| match r.ok() {
-                Some(p) if p.status() != PaymentStatus::InFlight => Some(p),
-                _ => None,
-            })
-            .next()
-            .await
-        {
-            Some(p) if p.status() == PaymentStatus::Succeeded => Ok(p),
-            Some(p) => Err(Error::LightningPaymentFailed(format!(
-                "Lightning payment failed: Status: {}, Reason:{}",
-                p.status().as_str_name(),
-                p.failure_reason().as_str_name()
-            ))),
-            _ => Err(Error::LightningPaymentFailed(
+        let mut return_message = None;
+
+        // susbcribe until we get a success or failure
+        while let Ok(Some(message)) = result.message().await {
+            match message.status() {
+                PaymentStatus::Succeeded => {
+                    return_message = Some(Ok(message));
+                    break;
+                }
+                PaymentStatus::Failed => {
+                    return_message = Some(Err(Error::LightningPaymentFailed(format!(
+                        "Lightning payment failed: Status: {}, Reason:{}",
+                        message.status().as_str_name(),
+                        message.failure_reason().as_str_name()
+                    ))));
+                    break;
+                }
+                _ => continue,
+            }
+        }
+        match return_message {
+            Some(r) => r,
+            None => Err(Error::LightningPaymentFailed(
                 "Lightning payment failed without response".to_string(),
             )),
         }
