@@ -14,6 +14,7 @@ use bitcoin::{
     hex::DisplayHex,
     Address, Amount, Network, PublicKey,
 };
+use fedimint_tonic_lnd::lnrpc::QueryRoutesRequest;
 use fedimint_tonic_lnd::{
     lnrpc::{
         payment::PaymentStatus, ChannelBalanceRequest, ChannelBalanceResponse, GetInfoRequest,
@@ -130,6 +131,10 @@ pub trait LndApi: Send + Sync {
         limit: i64,
         index: i64,
     ) -> Result<ListInvoiceResponse>;
+
+    /// Checks whether the given node is reachable and has enough liquidity in a route for the given amount.
+    /// Returns true if the node is reachable and has enough liquidity, false otherwise.
+    async fn probe_routes(&self, pub_key: PublicKey, amount: Amount) -> Result<bool>;
 }
 
 impl LndRpcWrapper {
@@ -491,6 +496,22 @@ impl LndApi for LndRpcWrapper {
             .await
             .map_err(|e| Error::NodeApi(e.to_string()))?
             .into_inner())
+    }
+
+    async fn probe_routes(&self, pub_key: PublicKey, amount: Amount) -> Result<bool> {
+        let mut lnd = self.client().await;
+        let route = lnd
+            .lightning()
+            .query_routes(QueryRoutesRequest {
+                pub_key: pub_key.to_string(),
+                amt: amount.to_sat() as i64,
+                ..Default::default()
+            })
+            .await
+            .map_err(|e| Error::NodeApi(e.to_string()))?
+            .into_inner();
+
+        Ok(!route.routes.is_empty())
     }
 }
 
