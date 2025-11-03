@@ -132,6 +132,15 @@ pub trait LndApi: Send + Sync {
         index: i64,
     ) -> Result<ListInvoiceResponse>;
 
+    /// Get a list of LND payments with pagination support.
+    async fn list_payments(
+        &self,
+        include_incomplete: bool,
+        index_offset: u64,
+        max_payments: u64,
+        reversed: bool,
+    ) -> Result<fedimint_tonic_lnd::lnrpc::ListPaymentsResponse>;
+
     /// Checks whether the given node is reachable and has enough liquidity in a route for the given amount.
     /// Returns true if the node is reachable and has enough liquidity, false otherwise.
     async fn probe_routes(&self, pub_key: PublicKey, amount: Amount) -> Result<bool>;
@@ -491,6 +500,29 @@ impl LndApi for LndRpcWrapper {
                 creation_date_start: from as u64,
                 creation_date_end: to as u64,
                 index_offset: index as u64,
+                ..Default::default()
+            })
+            .await
+            .map_err(|e| Error::NodeApi(e.to_string()))?
+            .into_inner())
+    }
+
+    /// Get a list of LND payments with pagination support.
+    async fn list_payments(
+        &self,
+        include_incomplete: bool,
+        index_offset: u64,
+        max_payments: u64,
+        reversed: bool,
+    ) -> Result<fedimint_tonic_lnd::lnrpc::ListPaymentsResponse> {
+        let mut lnd = self.client().await;
+        Ok(lnd
+            .lightning()
+            .list_payments(fedimint_tonic_lnd::lnrpc::ListPaymentsRequest {
+                include_incomplete,
+                index_offset,
+                max_payments,
+                reversed,
                 ..Default::default()
             })
             .await

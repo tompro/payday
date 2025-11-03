@@ -1066,4 +1066,44 @@ mod tests {
             }
         }
     }
+
+    #[tokio::test]
+    async fn test_list_payments() {
+        use fedimint_tonic_lnd::lnrpc::{ListPaymentsResponse, Payment};
+
+        let mut mock = MockLndApi::new();
+
+        // Create mock payment
+        let payment = Payment {
+            payment_hash: "abcdef1234567890".to_string(),
+            value_sat: 10000,
+            value_msat: 10000000,
+            payment_preimage: "preimage123".to_string(),
+            status: 2, // SUCCEEDED
+            ..Default::default()
+        };
+
+        mock.expect_list_payments()
+            .with(eq(false), eq(0), eq(10), eq(false))
+            .times(1)
+            .returning(move |_, _, _, _| {
+                Ok(ListPaymentsResponse {
+                    payments: vec![payment.clone()],
+                    first_index_offset: 0,
+                    last_index_offset: 1,
+                    total_num_payments: 1,
+                })
+            });
+
+        let lnd = Lnd::with_lnd_api(create_test_config(), Arc::new(mock))
+            .await
+            .unwrap();
+
+        let response = lnd.client.list_payments(false, 0, 10, false).await.unwrap();
+
+        assert_eq!(response.payments.len(), 1);
+        assert_eq!(response.payments[0].payment_hash, "abcdef1234567890");
+        assert_eq!(response.payments[0].value_sat, 10000);
+        assert_eq!(response.total_num_payments, 1);
+    }
 }
