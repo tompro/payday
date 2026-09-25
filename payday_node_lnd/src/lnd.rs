@@ -272,6 +272,16 @@ pub enum LndConfig {
         macaroon: String,
         network: Network,
     },
+    /// with a pinned PEM certificate string (e.g. from a secrets manager) and
+    /// macaroon string; uses exact certificate chain matching, works with
+    /// self-signed node certificates
+    CertData {
+        node_id: String,
+        address: String,
+        cert_pem: String,
+        macaroon: String,
+        network: Network,
+    },
 }
 
 impl LndConfig {
@@ -279,6 +289,7 @@ impl LndConfig {
         match self {
             LndConfig::CertPath { network, .. } => *network,
             LndConfig::RootCert { network, .. } => *network,
+            LndConfig::CertData { network, .. } => *network,
         }
     }
 
@@ -286,6 +297,7 @@ impl LndConfig {
         match self {
             LndConfig::CertPath { node_id, .. } => node_id.to_owned(),
             LndConfig::RootCert { node_id, .. } => node_id.to_owned(),
+            LndConfig::CertData { node_id, .. } => node_id.to_owned(),
         }
     }
 
@@ -293,6 +305,7 @@ impl LndConfig {
         match self {
             LndConfig::CertPath { address, .. } => address.to_owned(),
             LndConfig::RootCert { address, .. } => address.to_owned(),
+            LndConfig::CertData { address, .. } => address.to_owned(),
         }
     }
 }
@@ -520,6 +533,18 @@ pub(crate) async fn create_client(config: LndConfig) -> Result<Client> {
             address.to_string(),
             cert_path.to_string(),
             macaroon_file.to_string(),
+        )
+        .await
+        .map_err(|e| Error::NodeConnect(e.to_string()))?,
+        LndConfig::CertData {
+            address,
+            cert_pem,
+            macaroon,
+            ..
+        } => fedimint_tonic_lnd::connect_with_cert_pem(
+            address.to_string(),
+            cert_pem.to_string(),
+            macaroon.to_string(),
         )
         .await
         .map_err(|e| Error::NodeConnect(e.to_string()))?,
