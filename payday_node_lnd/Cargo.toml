@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-fedimint-tonic-lnd = { git = "https://github.com/tompro/tonic_lnd.git", branch = "master" }
+fedimint-tonic-lnd = { git = "https://github.com/tompro/tonic_lnd.git", rev = "86fde7f1928d06ec57d843e919e7b62b2858df70" }
 payday_core = { path = "../payday_core" }
 rand = "0.9"
 async-trait.workspace = true

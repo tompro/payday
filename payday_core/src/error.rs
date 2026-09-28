@@ -9,6 +9,8 @@ use crate::payment;
 pub enum Error {
     NodeConnect(String),
     NodeApi(String),
+    /// The requested node RPC is not implemented by the server.
+    NodeApiUnsupported,
     LightningPaymentFailed(String),
     InvalidInvoiceState(String),
     InvalidLightningInvoice(String),
