@@ -517,7 +517,52 @@ fn to_on_chain_events(
     Ok(res)
 }
 
-pub(crate) async fn create_client(config: LndConfig) -> Result<Client> {
+/// Builds a raw LND client for advanced RPCs not exposed by [`Lnd`].
+///
+/// Uses the same configuration and TLS behavior as Payday's higher-level client:
+/// - [`LndConfig::RootCert`] uses the platform certificate verifier and the supplied
+///   hex-encoded macaroon string.
+/// - [`LndConfig::CertPath`] reads the PEM certificate and binary macaroon files.
+/// - [`LndConfig::CertData`] uses the supplied PEM and hex-encoded macaroon string.
+///
+/// Both PEM modes pin the exact certificate chain, supporting self-signed LND
+/// certificates without hostname or expiry validation. Update the pin when the
+/// node's certificate changes. The address is passed through unchanged; use an
+/// `https://` address for TLS. `node_id` and `network` do not affect construction
+/// and are not validated against the remote node.
+///
+/// This function does not cache clients or impose deadlines. Callers own lazy
+/// initialization, caching, retry policy, and timeouts for construction and RPCs.
+/// Successful construction does not establish node reachability or authenticate
+/// the macaroon; those checks occur when an RPC is made.
+///
+/// # Errors
+///
+/// Constructor errors are returned as [`Error::NodeConnect`] with the underlying
+/// diagnostic text. Callers must sanitize errors before exposing them to users.
+///
+/// # Example
+///
+/// The returned future can be constructed without connecting to a node:
+///
+/// ```
+/// use std::future::Future;
+/// use bitcoin::Network;
+/// use fedimint_tonic_lnd::Client;
+/// use payday_node_lnd::lnd::{create_client, LndConfig};
+///
+/// fn check_client_future(_: impl Future<Output = payday_core::Result<Client>>) {}
+///
+/// let config = LndConfig::RootCert {
+///     node_id: "example".into(),
+///     address: "https://localhost:10009".into(),
+///     macaroon: "00".into(),
+///     network: Network::Regtest,
+/// };
+/// // Type-check the public API without polling the future or performing I/O.
+/// check_client_future(create_client(config));
+/// ```
+pub async fn create_client(config: LndConfig) -> Result<Client> {
     let lnd: Client = match config {
         LndConfig::RootCert {
             address, macaroon, ..
