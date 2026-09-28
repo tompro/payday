@@ -4,7 +4,7 @@
 //! handles connection and network checks, maps errors to project
 //! specific errors, and provides a convenient interface for the
 //! operations needed for invoicing.
-use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
+use std::{collections::HashMap, future::Future, str::FromStr, sync::Arc, time::Duration};
 
 use crate::lnd::LndConfig;
 use crate::{lnd::create_client, to_address};
@@ -22,6 +22,8 @@ use fedimint_tonic_lnd::{
         ListInvoiceRequest, ListInvoiceResponse, SendCoinsRequest, SendManyRequest, Transaction,
         WalletBalanceRequest, WalletBalanceResponse,
     },
+    tonic::{Code, Response, Status},
+    walletrpc::GetTransactionRequest,
     Client,
 };
 use lightning_invoice::Bolt11Invoice;
@@ -115,6 +117,10 @@ pub trait LndApi: Send + Sync {
         amount: Amount,
         timeout: Option<Duration>,
     ) -> Result<fedimint_tonic_lnd::lnrpc::Payment>;
+
+    /// Look up one wallet transaction by its display-order txid, including unconfirmed.
+    /// Requires LND >= 0.18 with WalletKit and onchain:read permission. No history fallback.
+    async fn get_transaction(&self, txid: &str) -> Result<Transaction>;
 
     /// Get a list of onchain transactions between the given start and end heights.
     async fn get_transactions(
@@ -464,6 +470,21 @@ impl LndApi for LndRpcWrapper {
         Ok(result)
     }
 
+    async fn get_transaction(&self, txid: &str) -> Result<Transaction> {
+        // Release the shared client lock before the RPC; bound this response
+        // independently without changing the limits on unrelated wallet calls.
+        let mut wallet = self
+            .client()
+            .await
+            .wallet()
+            .clone()
+            .max_decoding_message_size(4 * 1024 * 1024);
+        lookup_transaction(txid, |request| async move {
+            wallet.get_transaction(request).await
+        })
+        .await
+    }
+
     /// Get a list of onchain transactions between the given start and end heights.
     async fn get_transactions(
         &self,
@@ -556,4 +577,90 @@ fn network_from_str(s: &str) -> Result<Network> {
         _ => Err(Error::InvalidBitcoinNetwork(s.to_string()))?,
     };
     Ok(net)
+}
+
+// Narrow request/error seam: no retry, string matching, or history fallback.
+async fn lookup_transaction<F, Fut>(txid: &str, get_transaction: F) -> Result<Transaction>
+where
+    F: FnOnce(GetTransactionRequest) -> Fut,
+    Fut: Future<Output = std::result::Result<Response<Transaction>, Status>>,
+{
+    get_transaction(GetTransactionRequest { txid: txid.into() })
+        .await
+        .map(Response::into_inner)
+        .map_err(|error| match error.code() {
+            Code::Unimplemented => Error::NodeApiUnsupported,
+            _ => Error::NodeApi(error.to_string()),
+        })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn get_transaction_preserves_exact_txid_and_unconfirmed_outputs() {
+        let txid = "0123456789abcdef".repeat(4);
+        let expected = txid.clone();
+        let transaction = lookup_transaction(&txid, |request| async move {
+            assert_eq!(request.txid, expected);
+            Ok(Response::new(Transaction {
+                tx_hash: request.txid,
+                num_confirmations: 0,
+                output_details: vec![fedimint_tonic_lnd::lnrpc::OutputDetail {
+                    is_our_address: true,
+                    amount: 123,
+                    output_index: 2,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }))
+        })
+        .await
+        .unwrap();
+        assert_eq!(transaction.tx_hash, txid);
+        assert_eq!(transaction.num_confirmations, 0);
+        assert_eq!(transaction.output_details[0].amount, 123);
+        assert_eq!(transaction.output_details[0].output_index, 2);
+    }
+
+    #[tokio::test]
+    async fn get_transaction_only_maps_typed_unimplemented_to_unsupported() {
+        for code in [
+            Code::Unimplemented,
+            Code::Unknown,
+            Code::NotFound,
+            Code::Unavailable,
+            Code::PermissionDenied,
+        ] {
+            let result = lookup_transaction("txid", |_| async move {
+                Err(Status::new(
+                    code,
+                    "unimplemented: arbitrary server diagnostic",
+                ))
+            })
+            .await;
+            if code == Code::Unimplemented {
+                assert!(matches!(result, Err(Error::NodeApiUnsupported)));
+            } else {
+                assert!(matches!(result, Err(Error::NodeApi(_))));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn get_transaction_is_mockable_without_history_calls() {
+        let mut mock = MockLndApi::new();
+        mock.expect_get_transactions().never();
+        mock.expect_get_transaction()
+            .with(mockall::predicate::eq("txid"))
+            .once()
+            .returning(|txid| {
+                Ok(Transaction {
+                    tx_hash: txid.into(),
+                    ..Default::default()
+                })
+            });
+        assert_eq!(mock.get_transaction("txid").await.unwrap().tx_hash, "txid");
+    }
 }

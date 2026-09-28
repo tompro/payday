@@ -776,8 +776,8 @@ checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
 
 [[package]]
 name = "fedimint-tonic-lnd"
-version = "0.3.0"
-source = "git+https://github.com/tompro/tonic_lnd.git?branch=master#e187c666d8bfd716431c18fa7df2fece216fc40b"
+version = "0.4.0"
+source = "git+https://github.com/tompro/tonic_lnd.git?rev=86fde7f1928d06ec57d843e919e7b62b2858df70#86fde7f1928d06ec57d843e919e7b62b2858df70"
 dependencies = [
  "hex",
  "hyper",
